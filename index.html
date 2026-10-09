@@ -31,7 +31,8 @@
       <button class="tab active" data-tab="today" type="button">Overview</button>
       <button class="tab" data-tab="sessions" type="button">Sessions</button>
       <button class="tab" data-tab="ai" type="button">AI planner</button>
-      <button class="tab" data-tab="data" type="button">Data</button>
+      <button class="tab" data-tab="data" type="button">Data & reminders</button>
+      <button class="tab" data-tab="account" type="button">Account & sync</button>
     </nav>
 
     <section id="tab-today" class="tab-page active">
@@ -65,6 +66,7 @@
           <label>Time<input id="slotTime" type="time" value="17:00" required></label>
           <label class="span-two">Subject<select id="slotSubject" required></select></label>
           <label>Planned minutes<input id="slotMinutes" type="number" min="1" max="720" value="25" required></label>
+          <label>Reminder<select id="slotReminder"><option value="0">No reminder</option><option value="5">5 minutes before</option><option value="10" selected>10 minutes before</option><option value="15">15 minutes before</option><option value="30">30 minutes before</option></select></label>
           <label class="span-two">Task<input id="slotTask" maxlength="180" placeholder="e.g. Practise German speaking answers" required></label>
           <button class="primary-button span-two" type="submit">＋ Add session</button>
         </form>
@@ -76,6 +78,7 @@
       <section id="sessionEditor" class="card section-card hidden">
         <div class="section-heading"><div><h2>Edit selected session</h2><p id="selectedSessionTitle" class="muted"></p></div></div>
         <label class="checkbox-row"><input id="sessionCompleted" type="checkbox"> <span>I've completed this session</span></label>
+        <label class="field-block">Reminder<select id="sessionReminder"><option value="0">No reminder</option><option value="5">5 minutes before</option><option value="10">10 minutes before</option><option value="15">15 minutes before</option><option value="30">30 minutes before</option></select></label>
         <label class="field-block">What did you actually do? What needs revisiting?<textarea id="sessionNotes" rows="4" maxlength="3000" placeholder="e.g. Recalled the definition well, but need more practice explaining the effect on the reader."></textarea></label>
         <div class="button-row"><button id="saveSessionEdit" class="primary-button" type="button">Save changes</button><button id="deleteSession" class="danger-button" type="button">Delete</button></div>
       </section>
@@ -83,9 +86,11 @@
 
     <section id="tab-ai" class="tab-page">
       <section class="card section-card highlight-card">
-        <span class="eyebrow">NO API KEY OR API FEE</span>
-        <h2>Plan revision with ChatGPT</h2>
-        <p>The app can prepare a prompt from your subjects, schedule and notes. You send it in your normal ChatGPT conversation, then import the suggested sessions. It's not an embedded AI model, but it avoids separate API charges.</p>
+        <span class="eyebrow">FREE PLANNING OPTIONS</span>
+        <h2>AI Revision Planner</h2>
+        <p>Try a small AI model running inside this browser, or use ChatGPT with the copy-and-paste planner. No API key or API bill. The on-device model is experimental, requires a compatible browser and downloads several hundred MB the first time.</p>
+        <button id="runLocalAI" type="button" class="primary-button full-button">Try AI on this device</button>
+        <p id="localAIStatus" class="feedback" aria-live="polite">On-device AI has not been loaded.</p>
       </section>
       <section class="card section-card">
         <h2>1. Tell the AI what's coming up</h2>
@@ -122,14 +127,52 @@
         <p class="muted">The app files can be hosted free, but a website address is needed for installation and offline caching. See README.md in the download for setup steps.</p>
       </section>
       <section class="card section-card">
-        <h2>Reminders</h2>
-        <p>Export your planned sessions to Apple Calendar and turn on alerts there. Calendar reminders can arrive when this app and your computer are closed. The exported events are a snapshot, so export them again after changing your timetable.</p>
+        <h2>Revision reminders</h2>
+        <p>Each session can have a reminder offset. Export the week's sessions to Apple Calendar and add the calendar file on your iPhone. Calendar sends the alert even when this app is closed. Re-export after changing your timetable.</p>
+        <button id="exportCalendarFromReminders" class="primary-button full-button" type="button">Export reminders for this week</button>
+        <div class="divider"></div>
+        <h3>Push notifications (advanced setup)</h3>
+        <p>Once your account backend is configured, you can enable push alerts for this Home Screen app. On iPhone, add this site to your Home Screen first. Push alerts need a small server-side scheduler; they cannot be reliably scheduled by a static webpage alone.</p>
+        <button id="enablePush" class="secondary-button full-button" type="button">Enable push notifications</button>
+        <button id="disablePush" class="secondary-button full-button" type="button">Turn off push notifications</button>
+        <p id="pushStatus" class="feedback" aria-live="polite">Push notifications are not configured yet. Calendar reminders work without an account.</p>
+      </section>
+    </section>
+
+    <section id="tab-account" class="tab-page">
+      <section class="card section-card highlight-card">
+        <span class="eyebrow">OPTIONAL CLOUD ACCOUNT</span>
+        <h2>Sign in and sync between devices</h2>
+        <p>Each account has its own revision data, so friends can use the same published app without seeing one another's records. Account sync needs a free Supabase project configured by the app owner first.</p>
+      </section>
+      <section class="card section-card">
+        <h2>Your account</h2>
+        <p id="cloudStatus" class="feedback" aria-live="polite">Account sync is not configured. The app still works locally on this device.</p>
+        <label class="field-block">Email address<input id="authEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label>
+        <label class="field-block">Password<input id="authPassword" type="password" autocomplete="current-password" minlength="8" maxlength="128" placeholder="At least 8 characters"></label>
+        <div class="button-row">
+          <button id="signIn" class="primary-button" type="button">Sign in</button>
+          <button id="signUp" class="secondary-button" type="button">Create account</button>
+          <button id="signOut" class="secondary-button" type="button">Sign out</button>
+        </div>
+        <div class="button-row">
+          <button id="syncNow" class="secondary-button" type="button">Sync now</button>
+          <button id="uploadGuestData" class="secondary-button" type="button">Copy this device's data to my account</button>
+        </div>
+        <p class="muted small-help">The app never asks for your GitHub password. Account passwords are handled by Supabase. Do not share your login with friends; each person should create their own account.</p>
+      </section>
+      <section class="card section-card">
+        <h2>Owner setup checklist</h2>
+        <p>The source download includes the database SQL and push scheduler code. You must configure them before accounts or push notifications can work. Never put a Supabase service-role key or push private key in the public GitHub repository.</p>
+        <ol class="instructions"><li>Create a Supabase project.</li><li>Run <code>supabase/setup.sql</code> in its SQL Editor.</li><li>Copy the Project URL and publishable/anon key into <code>supabase-config.js</code>.</li><li>Deploy the included Edge Function and configure the private secrets to enable timed push reminders.</li><li>Upload the updated website files to GitHub Pages.</li></ol>
       </section>
     </section>
 
     <footer><span id="saveIndicator">Saved on this device</span><span>Revision Tracker · Offline-friendly</span></footer>
   </main>
   <div id="toast" role="status" aria-live="polite" class="toast hidden"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="supabase-config.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>
