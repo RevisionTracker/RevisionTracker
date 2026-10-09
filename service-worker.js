@@ -1,4 +1,4 @@
-const CACHE_NAME = 'revision-tracker-v2';
+const CACHE_NAME = 'revision-tracker-v3';
 const APP_FILES = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png', './supabase-config.js'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_FILES)).then(() => self.skipWaiting()));
@@ -8,8 +8,23 @@ self.addEventListener('activate', event => {
 });
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+  const requestUrl = new URL(event.request.url);
+
+  // Always try to refresh the public Supabase config first. Otherwise, changing
+  // supabase-config.js on GitHub can leave an old blank config cached forever.
+  if (requestUrl.origin === self.location.origin && requestUrl.pathname.endsWith('/supabase-config.js')) {
+    event.respondWith(fetch(event.request).then(response => {
+      if (response && response.ok) {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+      }
+      return response;
+    }).catch(() => caches.match(event.request)));
+    return;
+  }
+
   event.respondWith(caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
-    if (response && response.ok && new URL(event.request.url).origin === self.location.origin) {
+    if (response && response.ok && requestUrl.origin === self.location.origin) {
       const copy = response.clone(); caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
     }
     return response;
