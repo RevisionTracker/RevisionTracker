@@ -148,23 +148,49 @@
       <section class="card section-card">
         <h2>Your account</h2>
         <p id="cloudStatus" class="feedback" aria-live="polite">Account sync is not configured. The app still works locally on this device.</p>
-        <label class="field-block">Email address<input id="authEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label>
-        <label class="field-block">Password<input id="authPassword" type="password" autocomplete="current-password" minlength="8" maxlength="128" placeholder="At least 8 characters"></label>
-        <div class="button-row">
-          <button id="signIn" class="primary-button" type="button">Sign in</button>
-          <button id="signUp" class="secondary-button" type="button">Create account</button>
-          <button id="signOut" class="secondary-button" type="button">Sign out</button>
-        </div>
+        <form id="authForm" autocomplete="on" novalidate>
+          <label class="field-block">Username
+            <input id="authUsername" name="username" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" minlength="3" maxlength="24" pattern="[A-Za-z0-9_-]{3,24}" placeholder="3–24 letters, numbers, _ or -" required>
+          </label>
+          <label class="field-block">Password
+            <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" placeholder="At least 8 characters" required>
+          </label>
+          <div class="button-row">
+            <button id="authModeToggle" class="secondary-button" type="button">New here? Create account</button>
+            <button id="authSubmit" class="primary-button" type="submit">Sign in</button>
+            <button id="signOut" class="secondary-button" type="button">Sign out</button>
+          </div>
+        </form>
         <div class="button-row">
           <button id="syncNow" class="secondary-button" type="button">Sync now</button>
           <button id="uploadGuestData" class="secondary-button" type="button">Copy this device's data to my account</button>
         </div>
-        <p class="muted small-help">The app never asks for your GitHub password. Account passwords are handled by Supabase. Do not share your login with friends; each person should create their own account.</p>
+        <p class="muted small-help">No email address is collected. Choose a unique username and strong password. iPhone Passwords can autofill the username/password fields. Because accounts do not use email, there is no email-based password reset; keep your password safe and export backups.</p>
+      </section>
+      <section class="card section-card">
+        <h2>My subjects</h2>
+        <p class="muted">Choose the subjects you study. Your selected subjects are saved with your account and follow you across devices.</p>
+        <div id="subjectChecklist" class="subject-checklist"></div>
+        <label class="field-block">Add another subject
+          <div class="inline-input-row"><input id="customSubjectInput" type="text" maxlength="40" autocomplete="off" placeholder="e.g. Further Maths"><button id="addCustomSubject" type="button" class="secondary-button">Add</button></div>
+        </label>
+        <div id="customSubjectList" class="custom-subject-list"></div>
+        <button id="saveSubjects" type="button" class="primary-button full-button">Save my subjects</button>
+        <p id="subjectsStatus" class="feedback" aria-live="polite"></p>
+      </section>
+      <section class="card section-card">
+        <h2>Automatic account backups</h2>
+        <p class="muted">When cloud-saved revision data changes, the server keeps a snapshot of the previous version. The latest 50 snapshots are retained per account.</p>
+        <button id="refreshBackups" class="secondary-button full-button" type="button">Load backup history</button>
+        <label class="field-block">Available backups<select id="backupSelect"><option value="">Sign in and load backup history</option></select></label>
+        <button id="restoreBackup" class="primary-button full-button" type="button">Restore selected backup</button>
+        <p id="backupStatus" class="feedback" aria-live="polite">Automatic backups become available after the database setup is applied.</p>
       </section>
       <section class="card section-card">
         <h2>Owner setup checklist</h2>
         <p>The source download includes the database SQL and push scheduler code. You must configure them before accounts or push notifications can work. Never put a Supabase service-role key or push private key in the public GitHub repository.</p>
-        <ol class="instructions"><li>Create a Supabase project.</li><li>Run <code>supabase/setup.sql</code> in its SQL Editor.</li><li>Copy the Project URL and publishable/anon key into <code>supabase-config.js</code>.</li><li>Deploy the included Edge Function and configure the private secrets to enable timed push reminders.</li><li>Upload the updated website files to GitHub Pages.</li></ol>
+        <ol class="instructions"><li>Create a Supabase project.</li><li>Run the updated <code>supabase/setup.sql</code> in its SQL Editor.</li><li>In Supabase Auth, allow signup and turn <strong>Confirm email off</strong>. The app uses an internal placeholder identity to provide username-only logins; it does not send email.</li><li>Copy the Project URL and publishable/anon key into <code>supabase-config.js</code>.</li><li>Deploy the included Edge Function and configure private secrets only if enabling push reminders.</li><li>Upload the updated website files to GitHub Pages.</li></ol>
+        <p class="muted small-help">Username-only accounts cannot use email recovery. Account IDs created by the older email-login version are separate; export your local data before switching if you need to move records.</p>
       </section>
     </section>
 

@@ -1,4 +1,4 @@
-# Revision Tracker v3 — setup, accounts and notifications
+# Revision Tracker v4 — setup, username accounts, backups and notifications
 
 This guide separates the setup into stages. **Get account sync working before configuring push notifications.** Do not try to debug both at once.
 
@@ -6,9 +6,9 @@ This guide separates the setup into stages. **Get account sync working before co
 
 1. Open the current app on the iPhone and use **Data & reminders → Export backup**.
 2. Extract this ZIP on your PC.
-3. Upload the **contents** of `RevisionTracker_iPhone` to the root of your existing GitHub Pages repository. `index.html` must remain at the root. Include the `supabase` folder too.
+3. Upload the **contents** of the extracted `RevisionTracker_iPhone_v4` folder to the root of your existing GitHub Pages repository. `index.html` must remain at the root. Include the `supabase` folder too.
 4. Commit the upload and wait for GitHub Pages to publish.
-5. Close the Home Screen app fully, open the website in Safari while online, then reopen the Home Screen app. The v3 service-worker cache name forces the app files to refresh.
+5. Close the Home Screen app fully, open the website in Safari while online, then reopen the Home Screen app. The v4 service-worker cache name forces the app files to refresh.
 6. Check that your previous records are still present before doing anything else.
 
 ## 1. AI: use the method that gives good results
@@ -17,11 +17,11 @@ The button called **Experimental local AI** runs a tiny 360-million-parameter mo
 
 The recommended free workflow is **AI planner → fill out the three context boxes → Create planning prompt → Copy prompt → open ChatGPT → paste and send → copy only the JSON response → paste it into the import box → Validate and import sessions**. This uses your normal ChatGPT access and does not use the paid API. Free ChatGPT usage limits still apply.
 
-The v3 prompt includes recent history, minutes by subject, completed sessions and revision notes, asks for specific tasks, and requests only new sessions. Before import, the app checks the JSON fields and rejects time overlaps with existing or other proposed sessions. Still inspect the timetable before accepting it: AI can make mistakes.
+The v4 prompt includes recent history, minutes by subject, completed sessions and revision notes, asks for specific tasks, and requests only new sessions. Before import, the app checks the JSON fields and rejects time overlaps with existing or other proposed sessions. Still inspect the timetable before accepting it: AI can make mistakes.
 
 A genuinely embedded, higher-quality cloud AI needs a provider account/API and may have charges or a limited free tier. The app cannot silently use a ChatGPT subscription as an API.
 
-## 2. Set up free Supabase account sync
+## 2. Set up username-based accounts, subject profiles and automatic backups
 
 Supabase hosts the authentication/database service. The website remains public, but each user's revision records are private to that account through row-level security.
 
@@ -30,7 +30,7 @@ Supabase hosts the authentication/database service. The website remains public, 
 1. Create a Supabase project in the Supabase dashboard. If the service account setup has age/consent requirements, ask a parent or guardian to help.
 2. Open **SQL Editor → New query**.
 3. Open `supabase/setup.sql` from this download, copy its entire contents into the query editor, then run it.
-4. Confirm that the tables `revision_data`, `push_subscriptions`, and `push_sent_reminders` exist. Do not disable row-level security.
+4. Confirm that the tables `revision_data`, `revision_data_backups`, `push_subscriptions`, and `push_sent_reminders` exist. Do not disable row-level security. The script also installs a trigger that captures previous cloud data versions and retains the latest 50 snapshots for each account.
 
 ### B. Configure the public website key
 
@@ -49,32 +49,44 @@ window.REVISION_APP_CONFIG = {
 
 **Never paste a Supabase secret/service-role key into this file.** Only the publishable/anon key belongs in browser code; row-level security is what keeps account records separated.
 
-### C. Tell Supabase your website address
+### C. Configure username/password accounts without collecting emails
 
-1. In Supabase, open **Authentication → URL Configuration**.
-2. Set **Site URL** to the exact GitHub Pages address, including the repository path and trailing slash, for example `https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/`.
-3. Add that exact address to **Redirect URLs** too. If your site also uses `index.html` explicitly, add that exact URL as a second redirect.
-4. Under **Authentication → Sign In / Providers**, ensure Email/password sign-in is enabled.
+The app does **not** ask people for an email address. Supabase's standard password auth is email/phone based rather than native username auth, so this app converts each username (lowercased) into an internal placeholder identity ending in `.invalid`. This keeps password hashing and session management inside Supabase Auth; the app never stores raw passwords itself. The placeholder is not a real mailbox and must not receive any email.
 
-### D. Test sign-up, sign-in and sync
+1. In Supabase, open **Authentication → Sign In / Providers → Email** (dashboard wording can vary).
+2. Make sure new sign-ups are allowed and the **Email provider is enabled**.
+3. Turn **Confirm email OFF**. This is essential: no user has a real email address to confirm. If confirmation is left on, sign-ups will be pending and no email can be received.
+4. In **Authentication → URL Configuration**, set the Site URL to the exact GitHub Pages address, including the repository path, for example `https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/`. Add the same address to Redirect URLs too.
+
+No real email address is sent or collected by the app. However, account recovery by email is therefore not available. If a user forgets their password, they cannot reset it with a confirmation link. Users should choose a strong unique password, let iPhone Passwords save it, and keep personal data backups.
+
+### D. Test account creation, sign-in and sync
 
 1. Open the app on your iPhone. Go to **Account & sync**.
-2. Create an account with your own email and a strong, unique password. Do not reuse your school or other account passwords.
-3. If the app says to confirm your email, check the inbox and spam folder, follow the confirmation link, return to the app and sign in.
-4. Add a harmless test session and tap **Sync now**. Confirm that it reports a successful sync.
-5. On another device/browser, open the same website, sign into that same account, and check the test session appears.
-6. To test friends: sign out, then ask a friend to create their own separate account. Never share passwords or use the same account between friends.
+2. Tap **New here? Create account** before focusing the password field. Use a unique username containing 3–24 letters, numbers, underscores or hyphens, and a password of at least 8 characters.
+3. iPhone Passwords may offer to suggest/save a password. Safari/iOS ultimately controls that prompt; the input fields use `username` and `new-password`/`current-password` autocomplete attributes.
+4. Add a custom subject or deselect subjects under **My subjects**, then tap **Save my subjects**. Tap **Sync now** and confirm the status reports success.
+5. Create a revision session, sync again, then use a second device to sign into the same username and check that subject choices and revision sessions appear.
+6. To test friends, sign out and let each friend create a separate account with their own username and password. Never share passwords or use the same account between people.
 
-**Important email limitation:** Supabase's default email sender is only for testing: it currently sends to addresses belonging to the project's organisation and is limited to about 2 emails per hour. That means it normally will not send confirmation emails to friends. To let friends sign up with confirmed email addresses, configure a custom SMTP mail provider in **Authentication → SMTP Settings**. Supabase documents this restriction here: https://supabase.com/docs/guides/auth/auth-smtp. Do not add all your friends as Supabase project/organisation members just to get around this. For a private demo, you can instead decide with a parent/guardian whether unconfirmed-email sign-in is acceptable, understanding that the email has not been verified and account recovery is weaker.
+### E. Test automatic backups and restore
+
+1. While signed in, make a small change to a subject selection or revision session and wait for cloud sync to complete.
+2. Make a second different change and sync again.
+3. Go to **Account & sync → Automatic account backups → Load backup history**. You should see the previous cloud snapshots.
+4. If testing restore, export a manual JSON backup first. Choose a snapshot and tap **Restore selected backup**. The currently stored cloud data will itself be backed up before the selected snapshot becomes current.
+
+The database trigger only sees cloud-synced data changes. Local guest data that has not been synced is not included in automatic account backups. Keep using **Data & reminders → Export backup** as an independent backup.
 
 ### If login still says unconfigured
 
 - Confirm `supabase-config.js` is in the repository root beside `index.html`, not inside the `supabase` folder.
 - Check that the Project URL starts with `https://` and ends with `.supabase.co`.
 - Check that the key is a **publishable/anon key**, not a secret/service-role key.
+- In Supabase Auth, make sure sign-ups are allowed and **Confirm email is OFF**.
 - Open the website in Safari online. Close and reopen the Home Screen app so the updated config is fetched.
-- In Supabase SQL Editor, verify `setup.sql` ran successfully and that `revision_data` has row-level security enabled.
-- If an error is shown, copy the exact error text (not your API key) so it can be diagnosed.
+- In Supabase SQL Editor, verify the updated `setup.sql` ran successfully and `revision_data` has row-level security enabled.
+- If an error is shown, copy the exact error text (not your key or password) so it can be diagnosed.
 
 ## 3. Push notifications on iPhone
 
@@ -102,7 +114,7 @@ Edit `supabase-config.js` and set `vapidPublicKey` to the generated **public** k
 ### C. Deploy the notification sender
 
 1. Install the Supabase CLI following the official instructions: https://supabase.com/docs/guides/cli.
-2. Open a terminal in the extracted `RevisionTracker_iPhone` folder (the folder that contains `supabase`). Run:
+2. Open a terminal in the extracted `RevisionTracker_iPhone_v4` folder (the folder that contains `supabase`). Run:
 
 ```powershell
 npx supabase login
@@ -113,7 +125,7 @@ npx supabase functions deploy revision-push
 3. In the Supabase dashboard, open **Edge Functions → Secrets** and add:
    - `VAPID_PUBLIC_KEY` = the VAPID public key
    - `VAPID_PRIVATE_KEY` = the VAPID private key
-   - `VAPID_SUBJECT` = a contact value such as `mailto:your-contact@example.com` (replace with an address you control)
+   - `VAPID_SUBJECT` = your HTTPS app URL, such as `https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/`
    - `CRON_SECRET` = a new long, random secret you choose
    - `APP_URL` = your exact GitHub Pages address, including repository path and trailing slash
 
@@ -142,9 +154,9 @@ Supabase Free projects can be paused after roughly seven days with too little da
 
 ## 4. Security and troubleshooting
 
-- Each friend should create their own account. Row-level security prevents friends from reading one another's `revision_data` rows.
+- Each friend should create their own account. Row-level security prevents friends from reading one another's `revision_data` or `revision_data_backups` rows.
 - Never disable RLS as a workaround for a sync error.
 - Never commit private VAPID keys, cron secrets, secret/service-role keys, passwords or personal revision data to GitHub.
-- Use **Export backup** before replacing files or importing a backup.
-- If sign-up fails with `email_address_not_authorized`, the default Supabase sender is refusing to email a non-team address; configure custom SMTP as described above.
+- Use **Export backup** before replacing files or restoring a cloud snapshot. Keep in mind that no-email accounts cannot use an email password reset.
+- If sign-up does not create a session, check that **Confirm email is OFF**. Username-only account creation has no real email to confirm.
 - If accounts work but push does not, test account sync first, then the VAPID subscription, then the scheduler/Edge Function logs—in that order.

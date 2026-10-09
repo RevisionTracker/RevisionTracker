@@ -2,10 +2,12 @@
   'use strict';
 
   const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-  const SUBJECTS = ['German', 'English Language', 'English Literature', 'Maths', 'Biology', 'Chemistry', 'Physics', 'Computer Science', 'Product Design'];
+  const DEFAULT_SUBJECTS = ['German', 'English Language', 'English Literature', 'Maths', 'Biology', 'Chemistry', 'Physics', 'Computer Science', 'Product Design'];
+  let SUBJECTS = [...DEFAULT_SUBJECTS];
   const STATUSES = ['Not planned', 'Planned', 'Completed'];
   const STORAGE_KEY = 'revision-tracker-data-v1';
   const LAST_USER_KEY = `${STORAGE_KEY}:last-user`;
+  const USERNAME_EMAIL_DOMAIN = 'accounts.revisiontracker.invalid';
   let activeStorageKey = STORAGE_KEY;
   try { const lastUserId = localStorage.getItem(LAST_USER_KEY); if (lastUserId && /^[0-9a-f-]{20,}$/i.test(lastUserId)) activeStorageKey = `${STORAGE_KEY}:user:${lastUserId}`; } catch {}
   let currentUser = null;
@@ -20,8 +22,10 @@
   const $ = id => document.getElementById(id);
   let selectedMonday = weekStart(new Date());
   let selectedSessionId = null;
-  let state = loadState();
   let toastTimer = null;
+  let state = loadState();
+  SUBJECTS = [...state.subjects];
+  let draftSubjects = [...SUBJECTS];
 
   function localDate(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
   function weekStart(d) { const x = localDate(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
@@ -33,46 +37,83 @@
   function weekTitle(d) { return `${prettyDate(d, {day:'numeric',month:'short',year:'numeric'})} – ${prettyDate(addDays(d,6), {day:'numeric',month:'short',year:'numeric'})}`; }
   function uid() { return (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 
-  function emptyWeek() {
+  function cleanSubjectName(value) {
+    if (typeof value !== 'string') return '';
+    return value.replace(/[\r\n\t]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+  }
+  function normalizeSubjectList(input) {
+    const values = Array.isArray(input) ? input : DEFAULT_SUBJECTS;
+    const out = [];
+    const seen = new Set();
+    for (const raw of values) {
+      const name = cleanSubjectName(raw);
+      if (!name || name.length < 2) continue;
+      const key = name.toLocaleLowerCase('en-GB');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(name);
+      if (out.length >= 20) break;
+    }
+    return out.length ? out : [...DEFAULT_SUBJECTS];
+  }
+  function emptyWeek(subjectList = SUBJECTS) {
     const days = {}, minutes = {};
-    for (const day of DAYS) { days[day] = 'Not planned'; minutes[day] = Object.fromEntries(SUBJECTS.map(s => [s, 0])); }
+    for (const day of DAYS) { days[day] = 'Not planned'; minutes[day] = Object.fromEntries(subjectList.map(s => [s, 0])); }
     return {days, minutes, slots: []};
   }
-  function normalizeWeek(raw) {
-    const out = emptyWeek();
+  function normalizeWeek(raw, subjectList = SUBJECTS) {
+    const known = new Set([...DEFAULT_SUBJECTS, ...subjectList]);
+    if (raw?.minutes && typeof raw.minutes === 'object') {
+      for (const row of Object.values(raw.minutes)) if (row && typeof row === 'object') {
+        for (const key of Object.keys(row)) {
+          const name = cleanSubjectName(key === 'English' ? 'English Language' : key);
+          if (name) known.add(name);
+        }
+      }
+    }
+    if (Array.isArray(raw?.slots)) for (const slot of raw.slots) {
+      const name = cleanSubjectName(slot?.subject);
+      if (name) known.add(name);
+    }
+    const out = emptyWeek([...known]);
     if (!raw || typeof raw !== 'object') return out;
     if (raw.days && typeof raw.days === 'object') for (const d of DAYS) if (STATUSES.includes(raw.days[d])) out.days[d] = raw.days[d];
     if (raw.minutes && typeof raw.minutes === 'object') for (const d of DAYS) {
       const row = raw.minutes[d]; if (!row || typeof row !== 'object') continue;
       if (row.English !== undefined && row['English Language'] === undefined) row['English Language'] = row.English;
-      for (const s of SUBJECTS) { const v = Number(row[s] ?? 0); out.minutes[d][s] = Number.isFinite(v) ? Math.max(0, Math.min(1440, Math.floor(v))) : 0; }
+      for (const s of known) { const v = Number(row[s] ?? 0); out.minutes[d][s] = Number.isFinite(v) ? Math.max(0, Math.min(1440, Math.floor(v))) : 0; }
     }
     if (Array.isArray(raw.slots)) for (const old of raw.slots) {
-      if (!old || !DAYS.includes(old.day) || !SUBJECTS.includes(old.subject) || !String(old.task || '').trim()) continue;
+      const subject = cleanSubjectName(old?.subject);
+      if (!old || !DAYS.includes(old.day) || !subject || !String(old.task || '').trim()) continue;
       const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(old.time || '')) ? old.time : '17:00';
-      out.slots.push({id: typeof old.id === 'string' ? old.id : uid(), day: old.day, time, subject: old.subject, task: String(old.task).slice(0,180), minutes: Math.max(1, Math.min(720, Number.parseInt(old.minutes ?? old.planned_minutes ?? 25,10) || 25)), completed: old.completed === true, notes: typeof old.notes === 'string' ? old.notes.slice(0,3000) : '', reminderMinutes: REMINDER_OPTIONS.includes(Number(old.reminderMinutes)) ? Number(old.reminderMinutes) : 10});
+      out.slots.push({id: typeof old.id === 'string' ? old.id : uid(), day: old.day, time, subject, task: String(old.task).slice(0,180), minutes: Math.max(1, Math.min(720, Number.parseInt(old.minutes ?? old.planned_minutes ?? 25,10) || 25)), completed: old.completed === true, notes: typeof old.notes === 'string' ? old.notes.slice(0,3000) : '', reminderMinutes: REMINDER_OPTIONS.includes(Number(old.reminderMinutes)) ? Number(old.reminderMinutes) : 10});
     }
     return out;
   }
-  function loadState(storageKey = activeStorageKey) {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(storageKey) || '{}');
-      const weeks = {};
-      const rawWeeks = parsed && parsed.weeks && typeof parsed.weeks === 'object' ? parsed.weeks : {};
-      for (const [key, val] of Object.entries(rawWeeks)) if (/^\d{4}-\d{2}-\d{2}$/.test(key)) weeks[key] = normalizeWeek(val);
-      return {version:1, weeks, timezone: typeof parsed.timezone === 'string' ? parsed.timezone : (Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London')};
-    } catch { return {version:1, weeks:{}, timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London')}; }
-  }
   function normalizeState(raw) {
-    const weeks = {};
+    const subjects = normalizeSubjectList(raw?.subjects);
     const rawWeeks = raw && raw.weeks && typeof raw.weeks === 'object' ? raw.weeks : {};
-    for (const [key, val] of Object.entries(rawWeeks)) if (/^\d{4}-\d{2}-\d{2}$/.test(key)) weeks[key] = normalizeWeek(val);
-    return {version:1, weeks, timezone: typeof raw?.timezone === 'string' ? raw.timezone : (Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London')};
+    const known = new Set([...DEFAULT_SUBJECTS, ...subjects]);
+    for (const val of Object.values(rawWeeks)) {
+      if (val?.minutes && typeof val.minutes === 'object') for (const row of Object.values(val.minutes)) if (row && typeof row === 'object') for (const key of Object.keys(row)) {
+        const name = cleanSubjectName(key === 'English' ? 'English Language' : key); if (name) known.add(name);
+      }
+      if (Array.isArray(val?.slots)) for (const slot of val.slots) { const name = cleanSubjectName(slot?.subject); if (name) known.add(name); }
+    }
+    const weeks = {};
+    for (const [key, val] of Object.entries(rawWeeks)) if (/^\d{4}-\d{2}-\d{2}$/.test(key)) weeks[key] = normalizeWeek(val, [...known]);
+    return {version:2, subjects, weeks, timezone: typeof raw?.timezone === 'string' ? raw.timezone : (Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London')};
   }
-  function getWeek(key = weekKey()) { if (!state.weeks[key]) state.weeks[key] = emptyWeek(); return state.weeks[key]; }
+  function loadState(storageKey = activeStorageKey) {
+    try { return normalizeState(JSON.parse(localStorage.getItem(storageKey) || '{}')); }
+    catch { return normalizeState({}); }
+  }
+  function getWeek(key = weekKey()) { if (!state.weeks[key]) state.weeks[key] = emptyWeek(SUBJECTS); const wk=state.weeks[key]; for(const day of DAYS) { if(!wk.minutes[day]) wk.minutes[day]={}; for(const subject of SUBJECTS) if(wk.minutes[day][subject]===undefined) wk.minutes[day][subject]=0; } return wk; }
   function persist(message = false) {
     try {
       state.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || state.timezone || 'Europe/London';
+      state.subjects = [...SUBJECTS];
       localStorage.setItem(activeStorageKey, JSON.stringify(state));
       $('saveIndicator').textContent = currentUser ? 'Saved locally · cloud sync enabled' : 'Saved on this device';
       if (message) showToast(currentUser ? 'Saved on this device; cloud sync queued.' : 'Saved on this device.');
@@ -346,23 +387,113 @@ ${JSON.stringify(context, null, 2)}`;
     valid.forEach(s=>addSlot(s));persist();render();setMessage('aiMessage',`Imported ${valid.length} sessions. Review them in the Sessions tab.`);showToast('AI suggestions imported.');
   });
 
-  // Optional Supabase account, private per-user sync and web-push subscription.
+  // Per-account subject preferences. These live inside the same state object as revision history.
+  function renderSubjectsEditor() {
+    const checklist = $('subjectChecklist');
+    const customList = $('customSubjectList');
+    if (!checklist || !customList) return;
+    checklist.replaceChildren();
+    customList.replaceChildren();
+    const custom = draftSubjects.filter(subject => !DEFAULT_SUBJECTS.includes(subject));
+    for (const subject of DEFAULT_SUBJECTS) {
+      const label = document.createElement('label');
+      label.className = 'subject-check-row';
+      const input = document.createElement('input');
+      input.type = 'checkbox'; input.checked = draftSubjects.includes(subject);
+      input.addEventListener('change', () => {
+        if (input.checked) {
+          if (!draftSubjects.includes(subject)) draftSubjects.push(subject);
+        } else {
+          draftSubjects = draftSubjects.filter(name => name !== subject);
+        }
+        $('saveSubjects').disabled = !draftSubjects.length;
+      });
+      const text = document.createElement('span'); text.textContent = subject;
+      label.append(input, text); checklist.append(label);
+    }
+    if (!custom.length) {
+      const hint = document.createElement('p'); hint.className = 'muted small-help'; hint.textContent = 'No custom subjects added.'; customList.append(hint);
+    } else {
+      for (const subject of custom) {
+        const chip = document.createElement('div'); chip.className = 'custom-subject-chip';
+        const name = document.createElement('span'); name.textContent = subject;
+        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'secondary-button'; remove.textContent = 'Remove';
+        remove.setAttribute('aria-label', `Remove ${subject}`);
+        remove.addEventListener('click', () => { draftSubjects = draftSubjects.filter(value => value !== subject); renderSubjectsEditor(); });
+        chip.append(name, remove); customList.append(chip);
+      }
+    }
+    $('saveSubjects').disabled = !draftSubjects.length;
+  }
+  $('addCustomSubject').addEventListener('click', () => {
+    const input = $('customSubjectInput');
+    const name = cleanSubjectName(input.value);
+    if (name.length < 2) { setMessage('subjectsStatus', 'Enter a subject name with at least 2 characters.', true); return; }
+    if (draftSubjects.some(s => s.toLocaleLowerCase('en-GB') === name.toLocaleLowerCase('en-GB'))) {
+      setMessage('subjectsStatus', 'That subject is already selected.', true); return;
+    }
+    if (draftSubjects.length >= 20) { setMessage('subjectsStatus', 'You can select up to 20 subjects.', true); return; }
+    draftSubjects.push(name); input.value = ''; renderSubjectsEditor(); setMessage('subjectsStatus', `${name} added to the draft. Tap Save my subjects to keep it.`);
+  });
+  $('customSubjectInput').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); $('addCustomSubject').click(); } });
+  $('saveSubjects').addEventListener('click', () => {
+    if (!draftSubjects.length) { setMessage('subjectsStatus', 'Select at least one subject.', true); return; }
+    const names = normalizeSubjectList([
+      ...DEFAULT_SUBJECTS.filter(subject => draftSubjects.includes(subject)),
+      ...draftSubjects.filter(subject => !DEFAULT_SUBJECTS.includes(subject))
+    ]);
+    if (!names.length) { setMessage('subjectsStatus', 'Select at least one subject.', true); return; }
+    SUBJECTS = names;
+    state.subjects = [...SUBJECTS];
+    // Preserve existing minutes and old sessions even for subjects temporarily deselected.
+    for (const week of Object.values(state.weeks)) {
+      for (const day of DAYS) {
+        if (!week.minutes[day]) week.minutes[day] = {};
+        for (const subject of SUBJECTS) if (week.minutes[day][subject] === undefined) week.minutes[day][subject] = 0;
+      }
+    }
+    if (persist()) {
+      render(); draftSubjects = [...SUBJECTS]; renderSubjectsEditor();
+      setMessage('subjectsStatus', `Saved ${SUBJECTS.length} subject${SUBJECTS.length === 1 ? '' : 's'} to this profile. ${currentUser ? 'Cloud sync has been queued.' : 'Sign in to sync across devices.'}`);
+    }
+  });
+
+  // Optional Supabase account, username/password login, per-user sync and web-push subscription.
+  // Supabase Auth natively supports email/phone identities rather than usernames. To avoid collecting
+  // real email addresses, the app maps a validated username to a synthetic, non-deliverable address.
+  // Email confirmations MUST be disabled in Supabase, or account creation cannot finish.
   function cloudConfigured() { return !!(window.supabase && CONFIG.supabaseUrl && CONFIG.supabasePublishableKey); }
   if (cloudConfigured()) {
-    try { supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabasePublishableKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }); }
+    try { supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabasePublishableKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } }); }
     catch (error) { supabaseClient = null; }
   }
   function setCloudMessage(text, isError=false) { setMessage('cloudStatus',text,isError); }
+  function normalizeUsername(raw) { return String(raw || '').trim().toLowerCase(); }
+  function isValidUsername(username) { return /^[a-z0-9_-]{3,24}$/.test(username); }
+  function usernameToInternalEmail(username) { return `${username}@${USERNAME_EMAIL_DOMAIN}`; }
+  function displayUsername(user) {
+    const metadata = user?.user_metadata?.username;
+    if (typeof metadata === 'string' && metadata) return metadata;
+    return String(user?.email || 'account').split('@')[0];
+  }
+  let authMode = 'signin';
+  function setAuthMode(mode) {
+    authMode = mode === 'signup' ? 'signup' : 'signin';
+    $('authPassword').setAttribute('autocomplete', authMode === 'signup' ? 'new-password' : 'current-password');
+    $('authSubmit').textContent = authMode === 'signup' ? 'Create account' : 'Sign in';
+    $('authModeToggle').textContent = authMode === 'signup' ? 'Already have an account? Sign in' : 'New here? Create account';
+  }
   function updateAuthUI() {
     if(!cloudConfigured() || !supabaseClient) {
       setCloudMessage('Account sync is not configured yet. Add your Supabase URL and publishable/anon key to supabase-config.js, then upload the files again. Local mode still works.',false);
-      $('signIn').disabled=true;$('signUp').disabled=true;$('signOut').disabled=true;$('syncNow').disabled=true;$('uploadGuestData').disabled=true;
-      $('enablePush').disabled=true;$('disablePush').disabled=true;
+      $('authSubmit').disabled=true;$('authModeToggle').disabled=true;$('signOut').disabled=true;$('syncNow').disabled=true;$('uploadGuestData').disabled=true;
+      $('enablePush').disabled=true;$('disablePush').disabled=true;$('refreshBackups').disabled=true;$('restoreBackup').disabled=true;
       return;
     }
-    const label=currentUser ? `Signed in as ${currentUser.email || 'your account'}. Your records are separated from other users.` : 'Not signed in. You can use the tracker locally or create an account to sync across devices.';
+    const label=currentUser ? `Signed in as ${displayUsername(currentUser)}. Your records and subjects are private to this account.` : 'Not signed in. You can use the tracker locally or create a username-based account to sync across devices.';
     setCloudMessage(label,false);
-    $('signIn').disabled=!!currentUser;$('signUp').disabled=!!currentUser;$('signOut').disabled=!currentUser;$('syncNow').disabled=!currentUser;$('uploadGuestData').disabled=!currentUser;
+    $('authSubmit').disabled=!!currentUser;$('authModeToggle').disabled=!!currentUser;$('signOut').disabled=!currentUser;$('syncNow').disabled=!currentUser;$('uploadGuestData').disabled=!currentUser;
+    $('refreshBackups').disabled=!currentUser;$('restoreBackup').disabled=!currentUser || !$('backupSelect').value;
     $('enablePush').disabled=!currentUser || !CONFIG.vapidPublicKey;
     $('disablePush').disabled=!currentUser;
     if(!CONFIG.vapidPublicKey) setMessage('pushStatus','Push reminders need the VAPID public key and the server-side scheduler configured. Calendar reminders work now.',false);
@@ -380,38 +511,86 @@ ${JSON.stringify(context, null, 2)}`;
     cloudSyncInProgress=true;
     try {
       state.timezone=Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London';
+      state.subjects = [...SUBJECTS];
       const {error}=await supabaseClient.from('revision_data').upsert({user_id:currentUser.id,data:state,updated_at:new Date().toISOString()},{onConflict:'user_id'});
       if(error) throw error;
       $('saveIndicator').textContent='Saved locally · cloud synced';
-      if(showMessage) setCloudMessage('Sync successful. Your latest revision records are stored in your account.',false);
+      if(showMessage) setCloudMessage('Sync successful. Your revision records and subject choices are stored in your account.',false);
       return true;
     } catch(error) {
       if(showMessage) setCloudMessage(`Cloud sync failed: ${String(error.message||error).slice(0,180)}. Local data is still saved on this device.`,true);
       return false;
     } finally { cloudSyncInProgress=false; }
   }
+  async function loadBackupHistory() {
+    const select = $('backupSelect');
+    select.replaceChildren();
+    if (!currentUser || !supabaseClient) {
+      const option=document.createElement('option');option.value='';option.textContent='Sign in to load backups';select.append(option);
+      setMessage('backupStatus','Sign in to view automatic cloud backups.',false);updateAuthUI();return;
+    }
+    const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Loading backups…';select.append(placeholder);
+    try {
+      const {data,error}=await supabaseClient.from('revision_data_backups').select('id,created_at,source_updated_at').eq('user_id',currentUser.id).order('created_at',{ascending:false}).limit(50);
+      if(error) throw error;
+      select.replaceChildren();
+      if(!data || !data.length) {
+        const option=document.createElement('option');option.value='';option.textContent='No snapshots yet';select.append(option);
+        setMessage('backupStatus','No cloud snapshots yet. The app will create them as your saved account data changes.',false);
+      } else {
+        for (const backup of data) {
+          const option=document.createElement('option');option.value=String(backup.id);
+          const when = new Date(backup.created_at).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'});
+          option.textContent=`${when}${backup.source_updated_at ? ' · saved version' : ''}`;select.append(option);
+        }
+        setMessage('backupStatus',`Found ${data.length} automatic backup snapshot${data.length===1?'':'s'}. The newest 50 are retained.`,false);
+      }
+    } catch(error) {
+      select.replaceChildren();const option=document.createElement('option');option.value='';option.textContent='Could not load backups';select.append(option);
+      setMessage('backupStatus',`Backup history unavailable: ${String(error.message||error).slice(0,180)}. Apply the updated supabase/setup.sql first.`,true);
+    }
+    updateAuthUI();
+  }
+  $('refreshBackups').addEventListener('click',loadBackupHistory);
+  $('backupSelect').addEventListener('change',updateAuthUI);
+  $('restoreBackup').addEventListener('click',async()=>{
+    if(!currentUser || !supabaseClient) { setMessage('backupStatus','Sign in before restoring a backup.',true);return; }
+    const id=Number($('backupSelect').value);
+    if(!Number.isSafeInteger(id) || id<1) { setMessage('backupStatus','Choose a backup snapshot first.',true);return; }
+    if(!confirm('Restore this snapshot? The current cloud state will first be preserved as an automatic backup.')) return;
+    try {
+      const {data,error}=await supabaseClient.from('revision_data_backups').select('snapshot_data,created_at').eq('id',id).eq('user_id',currentUser.id).maybeSingle();
+      if(error) throw error;
+      if(!data || !data.snapshot_data || typeof data.snapshot_data!=='object') throw new Error('That backup could not be found. Refresh the backup list.');
+      clearTimeout(cloudSyncTimer);
+      state=normalizeState(data.snapshot_data);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];
+      localStorage.setItem(activeStorageKey,JSON.stringify(state));render();renderSubjectsEditor();
+      if(await syncCloud(true)) { setMessage('backupStatus',`Backup from ${new Date(data.created_at).toLocaleString('en-GB')} restored. Your previous cloud version was kept as a backup.`,false);await loadBackupHistory(); }
+    } catch(error) { setMessage('backupStatus',`Restore failed: ${String(error.message||error).slice(0,180)}`,true); }
+  });
   async function activateUser(user) {
     if(!user) return;
     if(currentUser && currentUser.id===user.id) { updateAuthUI(); return; }
     currentUser=user;
     activeStorageKey=`${STORAGE_KEY}:user:${user.id}`;
     try { localStorage.setItem(LAST_USER_KEY,user.id); } catch {}
-    state=loadState(activeStorageKey);
-    render();
-    updateAuthUI();
+    clearTimeout(cloudSyncTimer);
+    state=loadState(activeStorageKey);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];
+    render();renderSubjectsEditor();updateAuthUI();
     try {
       const {data,error}=await supabaseClient.from('revision_data').select('data,updated_at').eq('user_id',user.id).maybeSingle();
       if(error) throw error;
       if(data && data.data && typeof data.data==='object') {
-        state=normalizeState(data.data);
+        state=normalizeState(data.data);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];
         localStorage.setItem(activeStorageKey,JSON.stringify(state));
-        render();
-        setCloudMessage(`Signed in as ${user.email || 'your account'}. Cloud records loaded.`,false);
+        render();renderSubjectsEditor();
+        setCloudMessage(`Signed in as ${displayUsername(user)}. Cloud records and subject choices loaded.`,false);
       } else {
-        // A blank cloud account receives only its own local namespace, never another user's guest records.
+        state.subjects=[...SUBJECTS];
         await syncCloud(false);
-        setCloudMessage(`Account ready for ${user.email || 'you'}. This account has its own separate revision history.`,false);
+        setCloudMessage(`Account ready for ${displayUsername(user)}. Choose your subjects and start saving your own revision history.`,false);
       }
+      await loadBackupHistory();
     } catch(error) {
       setCloudMessage(`Signed in, but could not load cloud data: ${String(error.message||error).slice(0,160)}. Your local copy remains available.`,true);
     }
@@ -419,50 +598,58 @@ ${JSON.stringify(context, null, 2)}`;
   }
   async function signInOrSignUp(mode) {
     if(!supabaseClient) { setCloudMessage('Configure Supabase first. See the setup instructions in the project download.',true); return; }
-    const email=$('authEmail').value.trim(); const password=$('authPassword').value;
-    if(!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setCloudMessage('Enter a valid email address.',true); return; }
-    if(password.length<8) { setCloudMessage('Use a password of at least 8 characters.',true); return; }
-    $('signIn').disabled=true;$('signUp').disabled=true;
+    const username=normalizeUsername($('authUsername').value);
+    const password=$('authPassword').value;
+    $('authUsername').value=username;
+    if(!isValidUsername(username)) { setCloudMessage('Use a username of 3–24 characters containing only letters, numbers, underscores or hyphens.',true);$('authUsername').focus();return; }
+    if(password.length<8) { setCloudMessage('Use a password of at least 8 characters.',true);$('authPassword').focus();return; }
+    setAuthMode(mode);
+    $('authSubmit').disabled=true;$('authModeToggle').disabled=true;
     try {
+      const email=usernameToInternalEmail(username);
       if(mode==='signup') {
-        const {data,error}=await supabaseClient.auth.signUp({email,password});
+        const {data,error}=await supabaseClient.auth.signUp({email,password,options:{data:{username}}});
         if(error) throw error;
-        if(data.session) { await activateUser(data.user); setCloudMessage('Account created and signed in.',false); }
-        else setCloudMessage('Account request created. Check your email to confirm it, then sign in.',false);
+        if(data.session && data.user) { await activateUser(data.user); setCloudMessage(`Account created for ${username}. Your password manager may offer to save your login.`,false); }
+        else setCloudMessage('Account was created without a session. In Supabase, turn OFF Authentication → Sign In / Providers → Email → Confirm email, then try again. Username-only accounts cannot receive confirmation emails.',true);
       } else {
         const {data,error}=await supabaseClient.auth.signInWithPassword({email,password});
         if(error) throw error;
         await activateUser(data.user);
       }
-    } catch(error) { setCloudMessage(`Account action failed: ${String(error.message||error).slice(0,200)}`,true); }
-    finally { updateAuthUI(); }
+    } catch(error) {
+      const raw=String(error.message||error);
+      const friendly=/already registered|user already exists/i.test(raw) ? 'That username is already taken. Choose another one or sign in.' : /invalid login credentials/i.test(raw) ? 'Username or password is incorrect.' : /email/i.test(raw) && /confirm|verify/i.test(raw) ? 'Email confirmation must be disabled in Supabase because accounts do not use real email addresses.' : raw.slice(0,200);
+      setCloudMessage(`Account action failed: ${friendly}`,true);
+    } finally { updateAuthUI(); }
   }
-  $('signIn').addEventListener('click',()=>signInOrSignUp('signin'));
-  $('signUp').addEventListener('click',()=>signInOrSignUp('signup'));
+  $('authModeToggle').addEventListener('click',()=>setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
+  $('authSubmit').addEventListener('click',event=>{event.preventDefault();signInOrSignUp(authMode);});
+  $('authForm').addEventListener('submit',event=>{event.preventDefault();signInOrSignUp(authMode);});
   $('signOut').addEventListener('click',async()=>{
     if(!supabaseClient || !currentUser) return;
     await syncCloud(false);
     await disablePush();
     const {error}=await supabaseClient.auth.signOut();
     if(error) { setCloudMessage(`Sign out failed: ${error.message}`,true); return; }
-    currentUser=null;activeStorageKey=STORAGE_KEY;try{localStorage.removeItem(LAST_USER_KEY);}catch{}state=loadState(STORAGE_KEY);selectedSessionId=null;render();updateAuthUI();
+    currentUser=null;activeStorageKey=STORAGE_KEY;try{localStorage.removeItem(LAST_USER_KEY);}catch{}state=loadState(STORAGE_KEY);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];selectedSessionId=null;render();renderSubjectsEditor();updateAuthUI();loadBackupHistory();
   });
   $('syncNow').addEventListener('click',()=>syncCloud(true));
   $('uploadGuestData').addEventListener('click',async()=>{
     if(!currentUser) return;
     if(!confirm('Copy the revision data currently stored in the guest/local profile to this signed-in account? This replaces the account copy and should only be used for your own data.')) return;
     const guest=loadState(STORAGE_KEY);
-    state=normalizeState(guest);localStorage.setItem(activeStorageKey,JSON.stringify(state));render();
-    await syncCloud(true);
+    state=normalizeState(guest);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];localStorage.setItem(activeStorageKey,JSON.stringify(state));render();renderSubjectsEditor();
+    await syncCloud(true);await loadBackupHistory();
   });
   window.addEventListener('online',()=>queueCloudSync(100));
   if(supabaseClient) {
     supabaseClient.auth.onAuthStateChange((event,session)=>{
       if(session?.user) setTimeout(()=>activateUser(session.user),0);
-      else if(event==='SIGNED_OUT' && currentUser) { currentUser=null;activeStorageKey=STORAGE_KEY;try{localStorage.removeItem(LAST_USER_KEY);}catch{}state=loadState(STORAGE_KEY);render();updateAuthUI(); }
+      else if(event==='SIGNED_OUT' && currentUser) { currentUser=null;activeStorageKey=STORAGE_KEY;try{localStorage.removeItem(LAST_USER_KEY);}catch{}state=loadState(STORAGE_KEY);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];render();renderSubjectsEditor();updateAuthUI(); }
     });
-    supabaseClient.auth.getSession().then(({data})=>{if(data.session?.user) activateUser(data.session.user); else updateAuthUI();}).catch(()=>updateAuthUI());
-  } else updateAuthUI();
+    supabaseClient.auth.getSession().then(({data})=>{if(data.session?.user) activateUser(data.session.user); else {updateAuthUI();renderSubjectsEditor();}}).catch(()=>{updateAuthUI();renderSubjectsEditor();});
+  } else { updateAuthUI();renderSubjectsEditor(); }
 
   function base64UrlToUint8Array(base64String) {
     const padding='='.repeat((4-base64String.length%4)%4);
@@ -508,7 +695,7 @@ ${JSON.stringify(context, null, 2)}`;
 
   // Backup and import. Supports this app's backup format and the user's earlier Python revision_data.json format.
   function downloadFile(name,content,type) { const blob=new Blob([content],{type});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000); }
-  $('exportData').addEventListener('click',()=>{downloadFile(`revision-backup-${dateKey(new Date())}.json`,JSON.stringify({app:'GCSE Revision Tracker',version:1,exportedAt:new Date().toISOString(),weeks:state.weeks},null,2),'application/json');setMessage('dataMessage','Backup exported. Store it somewhere safe.');});
+  $('exportData').addEventListener('click',()=>{downloadFile(`revision-backup-${dateKey(new Date())}.json`,JSON.stringify({app:'GCSE Revision Tracker',version:2,exportedAt:new Date().toISOString(),subjects:state.subjects,weeks:state.weeks},null,2),'application/json');setMessage('dataMessage','Backup exported, including your selected subjects. Store it somewhere safe.');});
   $('importData').addEventListener('change',async e=>{
     const file=e.target.files && e.target.files[0];if(!file)return;
     try{
@@ -518,7 +705,7 @@ ${JSON.stringify(context, null, 2)}`;
       for(const [k,v] of Object.entries(incoming)){if(/^\d{4}-\d{2}-\d{2}$/.test(k)){converted[k]=normalizeWeek(v);count++;}}
       if(!count)throw new Error('No dated weeks found in this file.');
       if(!confirm(`Import ${count} week records? If dates already exist, they will be replaced.`))return;
-      state.weeks={...state.weeks,...converted};persist();render();setMessage('dataMessage',`Imported ${count} weeks successfully.`);
+      state.weeks={...state.weeks,...converted};if(Array.isArray(obj.subjects))state.subjects=normalizeSubjectList(obj.subjects);state=normalizeState(state);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];persist();render();renderSubjectsEditor();setMessage('dataMessage',`Imported ${count} weeks and restored subject preferences successfully.`);
     }catch(err){setMessage('dataMessage',`Import failed: ${err.message}`,true);}finally{e.target.value='';}
   });
   function icsEscape(s) { return String(s).replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;'); }
@@ -541,6 +728,8 @@ ${JSON.stringify(context, null, 2)}`;
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     navigator.serviceWorker.register('./service-worker.js').catch(() => { $('saveIndicator').textContent='Offline caching unavailable'; });
   }
+  setAuthMode('signin');
   render();
+  renderSubjectsEditor();
   updateAuthUI();
 })();
