@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#172554">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Revision">
+  <meta name="description" content="A private, offline-friendly GCSE revision planner.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+  <link rel="stylesheet" href="styles.css">
+  <title>Revision Tracker</title>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-mark" aria-hidden="true">R</div>
+    <div><h1>Revision Tracker</h1><p>Plan a little. Make progress.</p></div>
+    <button id="installHelp" class="icon-button" type="button" aria-label="Installation help" title="Installation help">ⓘ</button>
+  </header>
+
+  <main>
+    <section class="week-panel card">
+      <button id="prevWeek" class="nav-button" type="button" aria-label="Previous week">‹</button>
+      <div class="week-heading"><span class="eyebrow" id="weekTag">CURRENT WEEK</span><h2 id="weekRange">Loading week…</h2><p id="weekSub" class="muted"></p></div>
+      <button id="nextWeek" class="nav-button" type="button" aria-label="Next week">›</button>
+    </section>
+
+    <nav class="tabs" aria-label="Tracker sections">
+      <button class="tab active" data-tab="today" type="button">Overview</button>
+      <button class="tab" data-tab="sessions" type="button">Sessions</button>
+      <button class="tab" data-tab="ai" type="button">AI planner</button>
+      <button class="tab" data-tab="data" type="button">Data</button>
+    </nav>
+
+    <section id="tab-today" class="tab-page active">
+      <div class="stats-grid">
+        <article class="stat card"><span class="muted">Sessions done</span><strong id="statDone">0 / 0</strong></article>
+        <article class="stat card"><span class="muted">Revision time</span><strong id="statMinutes">0 min</strong></article>
+        <article class="stat card"><span class="muted">Days completed</span><strong id="statDays">0 / 7</strong></article>
+      </div>
+      <section class="card section-card">
+        <div class="section-heading"><div><h2>Daily overview</h2><p class="muted">Mark each day when you've revised.</p></div></div>
+        <div id="dayList" class="day-list"></div>
+      </section>
+      <section class="card section-card">
+        <div class="section-heading"><div><h2>Log actual revision time</h2><p class="muted">Enter the minutes you really studied, by subject and day.</p></div></div>
+        <label class="field-block">Day to log<select id="logDay"></select></label>
+        <div id="minuteLog" class="minute-log"></div>
+        <p class="muted small-help">Completion ticks and actual revision time are separate, so planned durations won't be accidentally counted as time you really spent.</p>
+        <button id="saveMinuteLog" type="button" class="primary-button full-button">Save revision times</button>
+      </section>
+      <section class="card section-card">
+        <div class="section-heading"><div><h2>Subject breakdown</h2><p class="muted">Actual minutes logged this week.</p></div></div>
+        <div id="subjectSummary" class="subject-summary"></div>
+      </section>
+    </section>
+
+    <section id="tab-sessions" class="tab-page">
+      <section class="card section-card">
+        <div class="section-heading"><div><h2>Plan a session</h2><p class="muted">Create a slot, then tick it off and add notes afterwards.</p></div></div>
+        <form id="sessionForm" class="form-grid">
+          <label>Day<select id="slotDay" required></select></label>
+          <label>Time<input id="slotTime" type="time" value="17:00" required></label>
+          <label class="span-two">Subject<select id="slotSubject" required></select></label>
+          <label>Planned minutes<input id="slotMinutes" type="number" min="1" max="720" value="25" required></label>
+          <label class="span-two">Task<input id="slotTask" maxlength="180" placeholder="e.g. Practise German speaking answers" required></label>
+          <button class="primary-button span-two" type="submit">＋ Add session</button>
+        </form>
+      </section>
+      <section class="card section-card">
+        <div class="section-heading"><div><h2>Sessions this week</h2><p class="muted">Tap a session to edit its notes or completion status.</p></div><span id="sessionCount" class="pill">0 sessions</span></div>
+        <div id="sessionList" class="session-list"></div>
+      </section>
+      <section id="sessionEditor" class="card section-card hidden">
+        <div class="section-heading"><div><h2>Edit selected session</h2><p id="selectedSessionTitle" class="muted"></p></div></div>
+        <label class="checkbox-row"><input id="sessionCompleted" type="checkbox"> <span>I've completed this session</span></label>
+        <label class="field-block">What did you actually do? What needs revisiting?<textarea id="sessionNotes" rows="4" maxlength="3000" placeholder="e.g. Recalled the definition well, but need more practice explaining the effect on the reader."></textarea></label>
+        <div class="button-row"><button id="saveSessionEdit" class="primary-button" type="button">Save changes</button><button id="deleteSession" class="danger-button" type="button">Delete</button></div>
+      </section>
+    </section>
+
+    <section id="tab-ai" class="tab-page">
+      <section class="card section-card highlight-card">
+        <span class="eyebrow">NO API KEY OR API FEE</span>
+        <h2>Plan revision with ChatGPT</h2>
+        <p>The app can prepare a prompt from your subjects, schedule and notes. You send it in your normal ChatGPT conversation, then import the suggested sessions. It's not an embedded AI model, but it avoids separate API charges.</p>
+      </section>
+      <section class="card section-card">
+        <h2>1. Tell the AI what's coming up</h2>
+        <label class="field-block">Upcoming tests, assessments or deadlines<textarea id="aiAssessments" rows="3" placeholder="e.g. German speaking on Friday; Chemistry test next Wednesday on bonding."></textarea></label>
+        <label class="field-block">Available revision time<textarea id="aiAvailability" rows="2" placeholder="e.g. 45 minutes on school nights, up to 90 minutes at weekends. Keep Sunday evening free."></textarea></label>
+        <label class="field-block">Extra priorities<textarea id="aiPriorities" rows="2" placeholder="e.g. Focus on weak topics, mix recall and exam questions, include breaks."></textarea></label>
+        <button id="makePrompt" type="button" class="primary-button full-button">Create planning prompt</button>
+      </section>
+      <section class="card section-card">
+        <h2>2. Copy the prompt into ChatGPT</h2>
+        <p class="muted">Copy the prompt, open ChatGPT, paste it and ask for the JSON response described in the prompt.</p>
+        <textarea id="aiPrompt" rows="9" placeholder="Your planning prompt will appear here."></textarea>
+        <div class="button-row"><button id="copyPrompt" type="button" class="secondary-button">Copy prompt</button><a class="secondary-button link-button" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">Open ChatGPT ↗</a></div>
+      </section>
+      <section class="card section-card">
+        <h2>3. Import the proposed sessions</h2>
+        <p class="muted">Paste the JSON returned by ChatGPT. Review the sessions before importing them.</p>
+        <textarea id="aiJson" rows="8" placeholder='{"sessions":[{"day":"Monday","time":"17:00","subject":"German","task":"Practise speaking answers","minutes":20}]}'></textarea>
+        <button id="importAi" type="button" class="primary-button full-button">Validate and import sessions</button>
+        <p id="aiMessage" class="feedback" aria-live="polite"></p>
+      </section>
+    </section>
+
+    <section id="tab-data" class="tab-page">
+      <section class="card section-card">
+        <h2>Your data stays on this device</h2>
+        <p>Revision entries are stored in this browser on your iPhone. They are not automatically synchronised to your PC or another phone. Export regular backups.</p>
+        <div class="button-stack"><button id="exportData" class="primary-button" type="button">Export backup</button><label class="secondary-button file-label">Import backup or Python tracker JSON<input id="importData" type="file" accept=".json,application/json" hidden></label><button id="exportCalendar" class="secondary-button" type="button">Export this week's calendar (.ics)</button></div>
+        <p id="dataMessage" class="feedback" aria-live="polite"></p>
+      </section>
+      <section class="card section-card">
+        <h2>Install on your iPhone</h2>
+        <ol class="instructions"><li>Host this app on a secure HTTPS website.</li><li>Open that address in <strong>Safari</strong> on your iPhone.</li><li>Tap <strong>Share → Add to Home Screen</strong>, then turn on <strong>Open as Web App</strong> if shown.</li><li>Open the new home-screen icon once while online, then try it offline.</li></ol>
+        <p class="muted">The app files can be hosted free, but a website address is needed for installation and offline caching. See README.md in the download for setup steps.</p>
+      </section>
+      <section class="card section-card">
+        <h2>Reminders</h2>
+        <p>Export your planned sessions to Apple Calendar and turn on alerts there. Calendar reminders can arrive when this app and your computer are closed. The exported events are a snapshot, so export them again after changing your timetable.</p>
+      </section>
+    </section>
+
+    <footer><span id="saveIndicator">Saved on this device</span><span>Revision Tracker · Offline-friendly</span></footer>
+  </main>
+  <div id="toast" role="status" aria-live="polite" class="toast hidden"></div>
+  <script src="app.js" defer></script>
+</body>
+</html>
