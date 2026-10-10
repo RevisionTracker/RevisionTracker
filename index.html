@@ -11,6 +11,19 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
   <link rel="stylesheet" href="styles.css">
+  <style>
+    .subject-search-wrap{position:relative;min-width:0;width:100%}
+    .subject-search-wrap input{width:100%;min-width:0}
+    .subject-suggestions{position:absolute;left:0;right:0;top:calc(100% + 4px);max-height:min(330px,45vh);overflow-y:auto;overscroll-behavior:contain;background:#fff;border:1px solid #cfd6e1;border-radius:12px;box-shadow:0 12px 28px #17255424;z-index:100;padding:5px}
+    .subject-suggestion-count{font-size:11px;color:#667085;padding:7px 9px;border-bottom:1px solid #edf0f4;margin-bottom:3px}
+    .subject-suggestion-option{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;min-height:42px;text-align:left;border:0;border-radius:8px;background:#fff;color:#172033;padding:9px 10px;font:inherit;cursor:pointer}
+    .subject-suggestion-option:hover,.subject-suggestion-option.active{background:#eef3ff}
+    .subject-suggestion-name{overflow-wrap:anywhere}
+    .subject-suggestion-kind{flex:0 0 auto;font-size:10px;font-weight:700;color:#667085;background:#f4f7fb;border-radius:99px;padding:3px 6px}
+    .subject-suggestion-empty{font-size:12px;color:#667085;padding:11px;line-height:1.4}
+    .subject-search-help{font-size:12px;color:#667085;margin:6px 0 0}
+    @media(max-width:480px){.subject-suggestion-kind{font-size:9px}.subject-suggestions{max-height:40vh}}
+  </style>
   <title>Revision Tracker</title>
 </head>
 <body>
@@ -169,10 +182,17 @@
       </section>
       <section class="card section-card">
         <h2>My subjects</h2>
-        <p class="muted">Maths, English Literature and English Language are selected by default. Add the other subjects you study from the dropdown. Your choices are saved with your account.</p>
+        <p class="muted">Maths, English Literature and English Language are selected by default. Search for and add the other GCSE subjects or BTECs you study. Your choices are saved with your account.</p>
         <div id="subjectChecklist" class="subject-checklist"></div>
-        <label class="field-block">Add a subject from the list
-          <div class="inline-input-row"><select id="subjectPicker" aria-label="Choose a subject to add"><option value="">Choose a subject…</option></select><button id="addPickedSubject" type="button" class="secondary-button">Add subject</button></div>
+        <label class="field-block">Search GCSE subjects and BTECs
+          <div class="inline-input-row">
+            <div id="subjectSearchWrap" class="subject-search-wrap">
+              <input id="subjectPicker" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="subjectSuggestions" aria-describedby="subjectSearchHelp" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Start typing, e.g. French or BTEC Sport">
+              <div id="subjectSuggestions" class="subject-suggestions hidden" role="listbox" aria-label="Matching subjects"></div>
+            </div>
+            <button id="addPickedSubject" type="button" class="secondary-button">Add subject</button>
+          </div>
+          <p id="subjectSearchHelp" class="subject-search-help">Type to filter matching subjects. Tap a suggestion, then choose Add subject. Use the custom field below if yours is not listed.</p>
         </label>
         <label class="field-block">Can't find your subject? Add a custom subject
           <div class="inline-input-row"><input id="customSubjectInput" type="text" maxlength="40" autocomplete="off" placeholder="e.g. A specialist course"><button id="addCustomSubject" type="button" class="secondary-button">Add custom</button></div>

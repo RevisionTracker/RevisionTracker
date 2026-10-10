@@ -1,7 +1,7 @@
-/* Revision Tracker service worker v5.
+/* Revision Tracker service worker v8.
    Forces the browser to refresh the HTML, application JS, CSS and public config
    while online, while still keeping cached copies for offline use. */
-const CACHE_NAME = 'revision-tracker-v6';
+const CACHE_NAME = 'revision-tracker-v8';
 const APP_FILES = [
   './', './index.html', './styles.css', './app.js',
   './manifest.webmanifest', './icon.svg', './icon-180.png',

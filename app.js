@@ -6,16 +6,68 @@
   const DEFAULT_SUBJECTS = ['Maths', 'English Literature', 'English Language'];
   // Keep this list so users who had the untouched old defaults are migrated to the new three.
   const LEGACY_DEFAULT_SUBJECTS = ['German', 'English Language', 'English Literature', 'Maths', 'Biology', 'Chemistry', 'Physics', 'Computer Science', 'Product Design'];
-  // Common GCSE and school subjects available from the add-subject dropdown.
+  // GCSE options and vocational courses. Exact provision varies by school and awarding body.
+  // Pearson's current KS4 BTEC Tech Award suite is included alongside broader BTEC subject areas.
   const SUBJECT_CATALOG = [
+    // GCSE core and sciences
     'Maths', 'English Literature', 'English Language', 'Biology', 'Chemistry', 'Physics',
-    'Combined Science', 'German', 'French', 'Spanish', 'Computer Science', 'Product Design',
-    'Design & Technology', 'Geography', 'History', 'Religious Studies', 'Business', 'Economics',
-    'Sociology', 'Psychology', 'Further Maths', 'Statistics', 'Art & Design', 'Drama', 'Music',
-    'Physical Education', 'Citizenship Studies', 'Food Preparation & Nutrition', 'Media Studies',
-    'Film Studies', 'Latin', 'Classical Civilisation', 'Astronomy', 'Engineering',
-    'Travel & Tourism', 'Health & Social Care'
+    'Combined Science', 'Separate Sciences', 'Further Maths', 'Statistics',
+    // GCSE humanities and social sciences
+    'Geography', 'History', 'Ancient History', 'Classical Civilisation', 'Religious Studies',
+    'Citizenship Studies', 'Business', 'Economics', 'Sociology', 'Psychology',
+    // GCSE technology, computing, design and practical subjects
+    'Computer Science', 'Design & Technology', 'Product Design', 'Engineering', 'Electronics',
+    'Food Preparation & Nutrition', 'Physical Education', 'Art & Design',
+    'Art & Design: Fine Art', 'Art & Design: Graphic Communication',
+    'Art & Design: Textile Design', 'Art & Design: Photography',
+    'Art & Design: Three-dimensional Design', 'Drama', 'Dance', 'Music',
+    'Media Studies', 'Film Studies', 'Astronomy', 'Geology',
+    // GCSE and other school languages
+    'French', 'German', 'Spanish', 'Italian', 'Chinese', 'Arabic', 'Bengali', 'Gujarati',
+    'Japanese', 'Panjabi', 'Persian', 'Polish', 'Portuguese', 'Russian', 'Turkish', 'Urdu',
+    'Modern Greek', 'Classical Greek', 'Latin', 'Biblical Hebrew', 'British Sign Language',
+    'Welsh', 'Welsh Second Language', 'Irish', 'Gaelic (Scottish)',
+    // Pearson BTEC Tech Awards for KS4
+    'BTEC Tech Award: Animal Care',
+    'BTEC Tech Award: Art and Design Practice',
+    'BTEC Tech Award: Child Development',
+    'BTEC Tech Award: Construction and the Built Environment',
+    'BTEC Tech Award: Creative Media Production',
+    'BTEC Tech Award: Digital Information Technology',
+    'BTEC Tech Award: Enterprise',
+    'BTEC Tech Award: Health and Social Care',
+    'BTEC Tech Award: Music Practice',
+    'BTEC Tech Award: Performing Arts',
+    'BTEC Tech Award: Sport',
+    'BTEC Tech Award: Travel and Tourism',
+    // Other BTEC areas / course names students may need to track
+    'BTEC: Applied Science', 'BTEC: Art and Design', 'BTEC: Business',
+    'BTEC: Construction', 'BTEC: Creative Media', 'BTEC: Engineering',
+    'BTEC: Esports', 'BTEC: Health and Social Care', 'BTEC: Information Technology',
+    'BTEC: Music', 'BTEC: Performing Arts', 'BTEC: Sport',
+    'BTEC: Travel and Tourism', 'BTEC: Animal Care', 'BTEC: Child Development',
+    'BTEC: Education and Early Years', 'BTEC: Hospitality',
+    'BTEC: Hospitality and Catering', 'BTEC: Land-based Studies',
+    'BTEC: Protective Services', 'BTEC: Transport and Logistics',
+    'BTEC: Enterprise and Entrepreneurship'
   ];
+  const SUBJECT_SEARCH_ALIASES = {
+    'Maths': ['Mathematics', 'Math'],
+    'Further Maths': ['Further Mathematics', 'Further Math', 'Additional Maths'],
+    'English Literature': ['English Lit', 'Eng Lit', 'Lit'],
+    'English Language': ['English Lang', 'Eng Lang', 'Lang'],
+    'Computer Science': ['Computing', 'Computer Studies', 'CS'],
+    'Design & Technology': ['Design Technology', 'Design Tech', 'D and T', 'DT'],
+    'Physical Education': ['PE', 'Physical Ed'],
+    'Religious Studies': ['RS', 'Religious Education', 'RE'],
+    'Food Preparation & Nutrition': ['Food Tech', 'Food Preparation', 'Nutrition'],
+    'BTEC Tech Award: Digital Information Technology': ['BTEC Digital IT', 'BTEC DIT', 'Digital IT'],
+    'BTEC Tech Award: Health and Social Care': ['BTEC Health Social Care', 'BTEC HSC'],
+    'BTEC Tech Award: Creative Media Production': ['BTEC Creative Media', 'Creative Media'],
+    'BTEC Tech Award: Construction and the Built Environment': ['BTEC Construction', 'Built Environment'],
+    'BTEC Tech Award: Art and Design Practice': ['BTEC Art and Design'],
+    'BTEC Tech Award: Travel and Tourism': ['BTEC Travel Tourism', 'Travel Tourism']
+  };
   let SUBJECTS = [...DEFAULT_SUBJECTS];
   const STATUSES = ['Not planned', 'Planned', 'Completed'];
   const STORAGE_KEY = 'revision-tracker-data-v1';
@@ -39,6 +91,8 @@
   let state = loadState();
   SUBJECTS = [...state.subjects];
   let draftSubjects = [...SUBJECTS];
+  let filteredSubjectSuggestions = [];
+  let activeSubjectSuggestion = -1;
 
   function localDate(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
   function weekStart(d) { const x = localDate(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
@@ -407,6 +461,114 @@ ${JSON.stringify(context, null, 2)}`;
   });
 
   // Per-account subject preferences. These live inside the same state object as revision history.
+  function normalizeSearchText(value) {
+    return String(value || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLocaleLowerCase('en-GB')
+      .replace(/&/g, ' and ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim().replace(/\s+/g, ' ');
+  }
+
+  function subjectSearchText(subject) {
+    return normalizeSearchText(`${subject} ${(SUBJECT_SEARCH_ALIASES[subject] || []).join(' ')}`);
+  }
+
+  function hideSubjectSuggestions() {
+    const list = $('subjectSuggestions');
+    if (!list) return;
+    list.classList.add('hidden');
+    $('subjectPicker').setAttribute('aria-expanded', 'false');
+    $('subjectPicker').removeAttribute('aria-activedescendant');
+    activeSubjectSuggestion = -1;
+  }
+
+  function chooseSubjectSuggestion(subject) {
+    const picker = $('subjectPicker');
+    picker.value = subject;
+    picker.dataset.selectedValue = subject;
+    hideSubjectSuggestions();
+  }
+
+  function updateSubjectSuggestionHighlight() {
+    const options = $('subjectSuggestions').querySelectorAll('[role="option"]');
+    options.forEach((option, index) => {
+      const active = index === activeSubjectSuggestion;
+      option.classList.toggle('active', active);
+      option.setAttribute('aria-selected', active ? 'true' : 'false');
+      if (active) {
+        $('subjectPicker').setAttribute('aria-activedescendant', option.id);
+        option.scrollIntoView({block: 'nearest'});
+      }
+    });
+    if (activeSubjectSuggestion < 0) $('subjectPicker').removeAttribute('aria-activedescendant');
+  }
+
+  function updateSubjectSuggestions() {
+    const picker = $('subjectPicker');
+    const list = $('subjectSuggestions');
+    if (!picker || !list) return;
+
+    picker.dataset.selectedValue = '';
+    activeSubjectSuggestion = -1;
+    list.replaceChildren();
+
+    const query = normalizeSearchText(picker.value);
+    const selectedKeys = new Set(draftSubjects.map(s => s.toLocaleLowerCase('en-GB')));
+    const available = SUBJECT_CATALOG.filter(subject => {
+      if (selectedKeys.has(subject.toLocaleLowerCase('en-GB'))) return false;
+      if (!query) return false;
+      const searchText = subjectSearchText(subject);
+      const words = searchText.split(' ');
+      const terms = query.split(' ');
+      return searchText.includes(query) || terms.every(term => words.some(word => word.startsWith(term) || (term.length >= 2 && word.includes(term))));
+    });
+    filteredSubjectSuggestions = available;
+
+    if (!query) {
+      hideSubjectSuggestions();
+      return;
+    }
+
+    if (!available.length) {
+      const empty = document.createElement('div');
+      empty.className = 'subject-suggestion-empty';
+      empty.textContent = 'No matching subjects. You can add it using the custom subject field below.';
+      list.append(empty);
+      list.classList.remove('hidden');
+      picker.setAttribute('aria-expanded', 'true');
+      return;
+    }
+
+    const count = document.createElement('div');
+    count.className = 'subject-suggestion-count';
+    count.textContent = `${available.length} matching subject${available.length === 1 ? '' : 's'} — choose one`;
+    list.append(count);
+
+    available.forEach((subject, index) => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.id = `subject-suggestion-${index}`;
+      option.className = 'subject-suggestion-option';
+      option.setAttribute('role', 'option');
+      option.setAttribute('aria-selected', 'false');
+      const name = document.createElement('span');
+      name.className = 'subject-suggestion-name';
+      name.textContent = subject;
+      const kind = document.createElement('span');
+      kind.className = 'subject-suggestion-kind';
+      kind.textContent = subject.startsWith('BTEC') ? 'BTEC' : 'GCSE / school';
+      option.append(name, kind);
+      // Keep the input focused while selecting a result on mobile browsers.
+      option.addEventListener('pointerdown', event => event.preventDefault());
+      option.addEventListener('click', () => chooseSubjectSuggestion(subject));
+      list.append(option);
+    });
+
+    list.classList.remove('hidden');
+    picker.setAttribute('aria-expanded', 'true');
+  }
+
   function renderSubjectsEditor() {
     const checklist = $('subjectChecklist');
     const customList = $('customSubjectList');
@@ -438,8 +600,7 @@ ${JSON.stringify(context, null, 2)}`;
       checklist.append(label);
     }
 
-    // Any additional subject, whether chosen from the dropdown or typed as a custom subject,
-    // appears below and can be removed from this profile without deleting historic records.
+    // Any additional subject can be removed without deleting its historical records.
     const additional = draftSubjects.filter(subject => !DEFAULT_SUBJECTS.includes(subject));
     if (!additional.length) {
       const hint = document.createElement('p');
@@ -466,37 +627,61 @@ ${JSON.stringify(context, null, 2)}`;
       }
     }
 
-    // Rebuild the native dropdown using subjects not already selected.
-    const selectedBeforeRefresh = picker.value;
-    picker.replaceChildren();
-    const placeholder = document.createElement('option');
-    placeholder.value = '';
-    placeholder.textContent = 'Choose a subject…';
-    picker.append(placeholder);
     const selectedKeys = new Set(draftSubjects.map(s => s.toLocaleLowerCase('en-GB')));
-    const available = SUBJECT_CATALOG.filter(subject => !selectedKeys.has(subject.toLocaleLowerCase('en-GB')));
-    for (const subject of available) {
-      const option = document.createElement('option');
-      option.value = subject;
-      option.textContent = subject;
-      picker.append(option);
-    }
-    if (available.some(subject => subject === selectedBeforeRefresh)) picker.value = selectedBeforeRefresh;
-    $('addPickedSubject').disabled = available.length === 0;
-    if (!available.length) {
-      const option = document.createElement('option');
-      option.value = '';
-      option.textContent = 'All listed subjects selected';
-      option.disabled = true;
-      picker.append(option);
-    }
+    const availableCount = SUBJECT_CATALOG.filter(subject => !selectedKeys.has(subject.toLocaleLowerCase('en-GB'))).length;
+    $('addPickedSubject').disabled = availableCount === 0 || draftSubjects.length >= 20;
     $('saveSubjects').disabled = !draftSubjects.length;
+    updateSubjectSuggestions();
   }
 
+  $('subjectPicker').addEventListener('input', updateSubjectSuggestions);
+  $('subjectPicker').addEventListener('focus', updateSubjectSuggestions);
+  $('subjectPicker').addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown') {
+      if ($('subjectSuggestions').classList.contains('hidden')) updateSubjectSuggestions();
+      if (filteredSubjectSuggestions.length) {
+        event.preventDefault();
+        activeSubjectSuggestion = Math.min(activeSubjectSuggestion + 1, filteredSubjectSuggestions.length - 1);
+        updateSubjectSuggestionHighlight();
+      }
+    } else if (event.key === 'ArrowUp') {
+      if (filteredSubjectSuggestions.length) {
+        event.preventDefault();
+        activeSubjectSuggestion = Math.max(0, activeSubjectSuggestion - 1);
+        updateSubjectSuggestionHighlight();
+      }
+    } else if (event.key === 'Enter') {
+      if (!$('subjectSuggestions').classList.contains('hidden') && filteredSubjectSuggestions.length) {
+        event.preventDefault();
+        const index = activeSubjectSuggestion >= 0 ? activeSubjectSuggestion : 0;
+        chooseSubjectSuggestion(filteredSubjectSuggestions[index]);
+      } else if ($('subjectPicker').dataset.selectedValue) {
+        event.preventDefault();
+        $('addPickedSubject').click();
+      }
+    } else if (event.key === 'Escape') {
+      hideSubjectSuggestions();
+    }
+  });
+  document.addEventListener('click', event => {
+    const wrap = $('subjectSearchWrap');
+    if (wrap && !wrap.contains(event.target)) hideSubjectSuggestions();
+  });
+
   $('addPickedSubject').addEventListener('click', () => {
-    const name = cleanSubjectName($('subjectPicker').value);
+    const picker = $('subjectPicker');
+    const typedName = cleanSubjectName(picker.value);
+    const selectedName = picker.dataset.selectedValue || '';
+    const typedKey = normalizeSearchText(typedName);
+    const exactMatch = SUBJECT_CATALOG.find(subject =>
+      normalizeSearchText(subject) === typedKey &&
+      !draftSubjects.some(existing => existing.toLocaleLowerCase('en-GB') === subject.toLocaleLowerCase('en-GB'))
+    );
+    const name = cleanSubjectName(selectedName || exactMatch || '');
     if (!name) {
-      setMessage('subjectsStatus', 'Choose a subject from the dropdown first.', true);
+      setMessage('subjectsStatus', 'Start typing, then choose a matching subject from the suggestions. Use the custom subject field for anything not listed.', true);
+      picker.focus();
+      updateSubjectSuggestions();
       return;
     }
     if (draftSubjects.some(s => s.toLocaleLowerCase('en-GB') === name.toLocaleLowerCase('en-GB'))) {
@@ -508,6 +693,9 @@ ${JSON.stringify(context, null, 2)}`;
       return;
     }
     draftSubjects.push(name);
+    $('subjectPicker').value = '';
+    $('subjectPicker').dataset.selectedValue = '';
+    hideSubjectSuggestions();
     renderSubjectsEditor();
     setMessage('subjectsStatus', `${name} added to the draft. Tap Save my subjects to keep it.`);
   });
