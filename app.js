@@ -2,9 +2,11 @@
   'use strict';
 
   const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-  // The only subjects selected automatically for a new profile.
-  const DEFAULT_SUBJECTS = ['Maths', 'English Literature', 'English Language'];
-  // Keep this list so users who had the untouched old defaults are migrated to the new three.
+  // Subjects preselected for new profiles. Users can uncheck any they do not study.
+  const DEFAULT_SUBJECTS = ['Maths', 'English Literature', 'English Language', 'Biology', 'Chemistry', 'Physics'];
+  // Previous versions preselected only Maths and English. Migrate profiles that still
+  // contain exactly those defaults, while preserving any deliberate custom subject list.
+  const PREVIOUS_DEFAULT_SUBJECTS = ['Maths', 'English Literature', 'English Language'];
   const LEGACY_DEFAULT_SUBJECTS = ['German', 'English Language', 'English Literature', 'Maths', 'Biology', 'Chemistry', 'Physics', 'Computer Science', 'Product Design'];
   // GCSE options and vocational courses. Exact provision varies by school and awarding body.
   // Pearson's current KS4 BTEC Tech Award suite is included alongside broader BTEC subject areas.
@@ -160,12 +162,13 @@
   }
   function normalizeState(raw) {
     const storedSubjects = Array.isArray(raw?.subjects) ? raw.subjects : DEFAULT_SUBJECTS;
-    // If a profile contains exactly the old untouched defaults, treat it as an old
-    // first-run profile and switch its selection to the new default trio. Any custom
-    // or deliberately different subject selection is preserved.
-    const wasOldUncustomisedDefault = storedSubjects.length === LEGACY_DEFAULT_SUBJECTS.length &&
+    // Migrate untouched profiles from either older default set to the current six.
+    // Deliberate custom subject selections remain untouched.
+    const wasPreviousDefault = storedSubjects.length === PREVIOUS_DEFAULT_SUBJECTS.length &&
+      storedSubjects.every((subject, index) => subject === PREVIOUS_DEFAULT_SUBJECTS[index]);
+    const wasLegacyDefault = storedSubjects.length === LEGACY_DEFAULT_SUBJECTS.length &&
       storedSubjects.every((subject, index) => subject === LEGACY_DEFAULT_SUBJECTS[index]);
-    const subjects = normalizeSubjectList(wasOldUncustomisedDefault ? DEFAULT_SUBJECTS : storedSubjects);
+    const subjects = normalizeSubjectList((wasPreviousDefault || wasLegacyDefault) ? DEFAULT_SUBJECTS : storedSubjects);
     const rawWeeks = raw && raw.weeks && typeof raw.weeks === 'object' ? raw.weeks : {};
     const known = new Set([...DEFAULT_SUBJECTS, ...subjects]);
     for (const val of Object.values(rawWeeks)) {
@@ -863,10 +866,21 @@ ${JSON.stringify(context, null, 2)}`;
       const {data,error}=await supabaseClient.from('revision_data').select('data,updated_at').eq('user_id',user.id).maybeSingle();
       if(error) throw error;
       if(data && data.data && typeof data.data==='object') {
+        const remoteSubjects = Array.isArray(data.data.subjects) ? data.data.subjects : [];
+        const wasPreviousDefault = remoteSubjects.length === PREVIOUS_DEFAULT_SUBJECTS.length &&
+          remoteSubjects.every((subject, index) => subject === PREVIOUS_DEFAULT_SUBJECTS[index]);
+        const wasLegacyDefault = remoteSubjects.length === LEGACY_DEFAULT_SUBJECTS.length &&
+          remoteSubjects.every((subject, index) => subject === LEGACY_DEFAULT_SUBJECTS[index]);
         state=normalizeState(data.data);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];
         localStorage.setItem(activeStorageKey,JSON.stringify(state));
         render();renderSubjectsEditor();
-        setCloudMessage(`Signed in as ${displayUsername(user)}. Cloud records and subject choices loaded.`,false);
+        if (wasPreviousDefault || wasLegacyDefault) {
+          // Save the migrated default list remotely so it remains consistent across devices.
+          await syncCloud(false);
+          setCloudMessage(`Signed in as ${displayUsername(user)}. Added Biology, Chemistry and Physics to the previous default subjects. You can remove any you do not study.`,false);
+        } else {
+          setCloudMessage(`Signed in as ${displayUsername(user)}. Cloud records and subject choices loaded.`,false);
+        }
       } else {
         state.subjects=[...SUBJECTS];
         await syncCloud(false);
