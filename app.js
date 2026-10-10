@@ -2,7 +2,20 @@
   'use strict';
 
   const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-  const DEFAULT_SUBJECTS = ['German', 'English Language', 'English Literature', 'Maths', 'Biology', 'Chemistry', 'Physics', 'Computer Science', 'Product Design'];
+  // The only subjects selected automatically for a new profile.
+  const DEFAULT_SUBJECTS = ['Maths', 'English Literature', 'English Language'];
+  // Keep this list so users who had the untouched old defaults are migrated to the new three.
+  const LEGACY_DEFAULT_SUBJECTS = ['German', 'English Language', 'English Literature', 'Maths', 'Biology', 'Chemistry', 'Physics', 'Computer Science', 'Product Design'];
+  // Common GCSE and school subjects available from the add-subject dropdown.
+  const SUBJECT_CATALOG = [
+    'Maths', 'English Literature', 'English Language', 'Biology', 'Chemistry', 'Physics',
+    'Combined Science', 'German', 'French', 'Spanish', 'Computer Science', 'Product Design',
+    'Design & Technology', 'Geography', 'History', 'Religious Studies', 'Business', 'Economics',
+    'Sociology', 'Psychology', 'Further Maths', 'Statistics', 'Art & Design', 'Drama', 'Music',
+    'Physical Education', 'Citizenship Studies', 'Food Preparation & Nutrition', 'Media Studies',
+    'Film Studies', 'Latin', 'Classical Civilisation', 'Astronomy', 'Engineering',
+    'Travel & Tourism', 'Health & Social Care'
+  ];
   let SUBJECTS = [...DEFAULT_SUBJECTS];
   const STATUSES = ['Not planned', 'Planned', 'Completed'];
   const STORAGE_KEY = 'revision-tracker-data-v1';
@@ -92,7 +105,13 @@
     return out;
   }
   function normalizeState(raw) {
-    const subjects = normalizeSubjectList(raw?.subjects);
+    const storedSubjects = Array.isArray(raw?.subjects) ? raw.subjects : DEFAULT_SUBJECTS;
+    // If a profile contains exactly the old untouched defaults, treat it as an old
+    // first-run profile and switch its selection to the new default trio. Any custom
+    // or deliberately different subject selection is preserved.
+    const wasOldUncustomisedDefault = storedSubjects.length === LEGACY_DEFAULT_SUBJECTS.length &&
+      storedSubjects.every((subject, index) => subject === LEGACY_DEFAULT_SUBJECTS[index]);
+    const subjects = normalizeSubjectList(wasOldUncustomisedDefault ? DEFAULT_SUBJECTS : storedSubjects);
     const rawWeeks = raw && raw.weeks && typeof raw.weeks === 'object' ? raw.weeks : {};
     const known = new Set([...DEFAULT_SUBJECTS, ...subjects]);
     for (const val of Object.values(rawWeeks)) {
@@ -391,15 +410,19 @@ ${JSON.stringify(context, null, 2)}`;
   function renderSubjectsEditor() {
     const checklist = $('subjectChecklist');
     const customList = $('customSubjectList');
-    if (!checklist || !customList) return;
+    const picker = $('subjectPicker');
+    if (!checklist || !customList || !picker) return;
+
     checklist.replaceChildren();
     customList.replaceChildren();
-    const custom = draftSubjects.filter(subject => !DEFAULT_SUBJECTS.includes(subject));
+
+    // Core defaults are checkboxes so they can be deselected if a student does not take them.
     for (const subject of DEFAULT_SUBJECTS) {
       const label = document.createElement('label');
       label.className = 'subject-check-row';
       const input = document.createElement('input');
-      input.type = 'checkbox'; input.checked = draftSubjects.includes(subject);
+      input.type = 'checkbox';
+      input.checked = draftSubjects.includes(subject);
       input.addEventListener('change', () => {
         if (input.checked) {
           if (!draftSubjects.includes(subject)) draftSubjects.push(subject);
@@ -407,24 +430,88 @@ ${JSON.stringify(context, null, 2)}`;
           draftSubjects = draftSubjects.filter(name => name !== subject);
         }
         $('saveSubjects').disabled = !draftSubjects.length;
+        renderSubjectsEditor();
       });
-      const text = document.createElement('span'); text.textContent = subject;
-      label.append(input, text); checklist.append(label);
+      const text = document.createElement('span');
+      text.textContent = subject;
+      label.append(input, text);
+      checklist.append(label);
     }
-    if (!custom.length) {
-      const hint = document.createElement('p'); hint.className = 'muted small-help'; hint.textContent = 'No custom subjects added.'; customList.append(hint);
+
+    // Any additional subject, whether chosen from the dropdown or typed as a custom subject,
+    // appears below and can be removed from this profile without deleting historic records.
+    const additional = draftSubjects.filter(subject => !DEFAULT_SUBJECTS.includes(subject));
+    if (!additional.length) {
+      const hint = document.createElement('p');
+      hint.className = 'muted small-help';
+      hint.textContent = 'No additional subjects selected yet.';
+      customList.append(hint);
     } else {
-      for (const subject of custom) {
-        const chip = document.createElement('div'); chip.className = 'custom-subject-chip';
-        const name = document.createElement('span'); name.textContent = subject;
-        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'secondary-button'; remove.textContent = 'Remove';
+      for (const subject of additional) {
+        const chip = document.createElement('div');
+        chip.className = 'custom-subject-chip';
+        const name = document.createElement('span');
+        name.textContent = subject;
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'secondary-button';
+        remove.textContent = 'Remove';
         remove.setAttribute('aria-label', `Remove ${subject}`);
-        remove.addEventListener('click', () => { draftSubjects = draftSubjects.filter(value => value !== subject); renderSubjectsEditor(); });
-        chip.append(name, remove); customList.append(chip);
+        remove.addEventListener('click', () => {
+          draftSubjects = draftSubjects.filter(value => value !== subject);
+          renderSubjectsEditor();
+        });
+        chip.append(name, remove);
+        customList.append(chip);
       }
+    }
+
+    // Rebuild the native dropdown using subjects not already selected.
+    const selectedBeforeRefresh = picker.value;
+    picker.replaceChildren();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Choose a subject…';
+    picker.append(placeholder);
+    const selectedKeys = new Set(draftSubjects.map(s => s.toLocaleLowerCase('en-GB')));
+    const available = SUBJECT_CATALOG.filter(subject => !selectedKeys.has(subject.toLocaleLowerCase('en-GB')));
+    for (const subject of available) {
+      const option = document.createElement('option');
+      option.value = subject;
+      option.textContent = subject;
+      picker.append(option);
+    }
+    if (available.some(subject => subject === selectedBeforeRefresh)) picker.value = selectedBeforeRefresh;
+    $('addPickedSubject').disabled = available.length === 0;
+    if (!available.length) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'All listed subjects selected';
+      option.disabled = true;
+      picker.append(option);
     }
     $('saveSubjects').disabled = !draftSubjects.length;
   }
+
+  $('addPickedSubject').addEventListener('click', () => {
+    const name = cleanSubjectName($('subjectPicker').value);
+    if (!name) {
+      setMessage('subjectsStatus', 'Choose a subject from the dropdown first.', true);
+      return;
+    }
+    if (draftSubjects.some(s => s.toLocaleLowerCase('en-GB') === name.toLocaleLowerCase('en-GB'))) {
+      setMessage('subjectsStatus', 'That subject is already selected.', true);
+      return;
+    }
+    if (draftSubjects.length >= 20) {
+      setMessage('subjectsStatus', 'You can select up to 20 subjects.', true);
+      return;
+    }
+    draftSubjects.push(name);
+    renderSubjectsEditor();
+    setMessage('subjectsStatus', `${name} added to the draft. Tap Save my subjects to keep it.`);
+  });
+
   $('addCustomSubject').addEventListener('click', () => {
     const input = $('customSubjectInput');
     const name = cleanSubjectName(input.value);
@@ -433,9 +520,15 @@ ${JSON.stringify(context, null, 2)}`;
       setMessage('subjectsStatus', 'That subject is already selected.', true); return;
     }
     if (draftSubjects.length >= 20) { setMessage('subjectsStatus', 'You can select up to 20 subjects.', true); return; }
-    draftSubjects.push(name); input.value = ''; renderSubjectsEditor(); setMessage('subjectsStatus', `${name} added to the draft. Tap Save my subjects to keep it.`);
+    draftSubjects.push(name);
+    input.value = '';
+    renderSubjectsEditor();
+    setMessage('subjectsStatus', `${name} added to the draft. Tap Save my subjects to keep it.`);
   });
-  $('customSubjectInput').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); $('addCustomSubject').click(); } });
+  $('customSubjectInput').addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); $('addCustomSubject').click(); }
+  });
+
   $('saveSubjects').addEventListener('click', () => {
     if (!draftSubjects.length) { setMessage('subjectsStatus', 'Select at least one subject.', true); return; }
     const names = normalizeSubjectList([
@@ -445,7 +538,7 @@ ${JSON.stringify(context, null, 2)}`;
     if (!names.length) { setMessage('subjectsStatus', 'Select at least one subject.', true); return; }
     SUBJECTS = names;
     state.subjects = [...SUBJECTS];
-    // Preserve existing minutes and old sessions even for subjects temporarily deselected.
+    // Preserve historic minutes and old sessions even when a subject is deselected.
     for (const week of Object.values(state.weeks)) {
       for (const day of DAYS) {
         if (!week.minutes[day]) week.minutes[day] = {};
@@ -453,11 +546,12 @@ ${JSON.stringify(context, null, 2)}`;
       }
     }
     if (persist()) {
-      render(); draftSubjects = [...SUBJECTS]; renderSubjectsEditor();
+      render();
+      draftSubjects = [...SUBJECTS];
+      renderSubjectsEditor();
       setMessage('subjectsStatus', `Saved ${SUBJECTS.length} subject${SUBJECTS.length === 1 ? '' : 's'} to this profile. ${currentUser ? 'Cloud sync has been queued.' : 'Sign in to sync across devices.'}`);
     }
   });
-
   // Optional Supabase account, username/password login, per-user sync and web-push subscription.
   // Supabase Auth natively supports email/phone identities rather than usernames. To avoid collecting
   // real email addresses, the app maps a validated username to a synthetic, non-deliverable address.

@@ -169,10 +169,13 @@
       </section>
       <section class="card section-card">
         <h2>My subjects</h2>
-        <p class="muted">Choose the subjects you study. Your selected subjects are saved with your account and follow you across devices.</p>
+        <p class="muted">Maths, English Literature and English Language are selected by default. Add the other subjects you study from the dropdown. Your choices are saved with your account.</p>
         <div id="subjectChecklist" class="subject-checklist"></div>
-        <label class="field-block">Add another subject
-          <div class="inline-input-row"><input id="customSubjectInput" type="text" maxlength="40" autocomplete="off" placeholder="e.g. Further Maths"><button id="addCustomSubject" type="button" class="secondary-button">Add</button></div>
+        <label class="field-block">Add a subject from the list
+          <div class="inline-input-row"><select id="subjectPicker" aria-label="Choose a subject to add"><option value="">Choose a subject…</option></select><button id="addPickedSubject" type="button" class="secondary-button">Add subject</button></div>
+        </label>
+        <label class="field-block">Can't find your subject? Add a custom subject
+          <div class="inline-input-row"><input id="customSubjectInput" type="text" maxlength="40" autocomplete="off" placeholder="e.g. A specialist course"><button id="addCustomSubject" type="button" class="secondary-button">Add custom</button></div>
         </label>
         <div id="customSubjectList" class="custom-subject-list"></div>
         <button id="saveSubjects" type="button" class="primary-button full-button">Save my subjects</button>

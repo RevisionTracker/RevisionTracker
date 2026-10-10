@@ -1,7 +1,7 @@
 /* Revision Tracker service worker v5.
    Forces the browser to refresh the HTML, application JS, CSS and public config
    while online, while still keeping cached copies for offline use. */
-const CACHE_NAME = 'revision-tracker-v5';
+const CACHE_NAME = 'revision-tracker-v6';
 const APP_FILES = [
   './', './index.html', './styles.css', './app.js',
   './manifest.webmanifest', './icon.svg', './icon-180.png',
@@ -44,9 +44,7 @@ self.addEventListener('fetch', event => {
     // Network-first for the code/config that changes during deployment.
     // cache:'reload' bypasses the normal HTTP cache where supported.
     event.respondWith(
-      fetch(event.request.mode === 'navigate'
-        ? new Request(event.request.url, { method: 'GET', cache: 'reload', credentials: 'same-origin', redirect: 'follow' })
-        : new Request(event.request, { cache: 'reload' }))
+      fetch(new Request(event.request, { cache: 'reload' }))
         .then(response => {
           if (response && response.ok) {
             const copy = response.clone();
