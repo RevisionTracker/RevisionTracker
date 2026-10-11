@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#172554">
+  <meta name="description" content="Test local, on-device AI for Revision Intelligence. No AI API key required.">
+  <title>Revision Intelligence · Local AI Test</title>
+  <style>
+    :root{color-scheme:light;--navy:#172554;--blue:#2446a6;--ink:#172033;--muted:#667085;--line:#dbe2ee;--panel:#fff;--page:#f4f7fb;--green:#137547;--amber:#875b00;--red:#a12c2c}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--page);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5}
+    header{background:var(--navy);color:#fff;padding:22px max(18px,calc((100% - 760px)/2));padding-top:calc(20px + env(safe-area-inset-top))}
+    header .eyebrow{font-size:.75rem;letter-spacing:.12em;text-transform:uppercase;opacity:.78;font-weight:700}
+    h1{margin:4px 0;font-size:1.65rem;line-height:1.2}
+    header p{margin:7px 0 0;color:#dbeafe;font-size:.94rem}
+    main{max-width:760px;margin:0 auto;padding:16px 14px 36px}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin:0 0 14px;box-shadow:0 4px 14px #17255408}
+    h2{font-size:1.1rem;line-height:1.3;margin:0 0 9px}
+    p{margin:8px 0}
+    .muted{color:var(--muted);font-size:.92rem}
+    label{display:block;font-weight:650;font-size:.92rem;margin:12px 0 6px}
+    select,textarea,button{font:inherit}
+    select,textarea{width:100%;border:1px solid #c7d0df;border-radius:10px;padding:11px 12px;background:white;color:var(--ink);min-height:44px}
+    textarea{resize:vertical;min-height:126px}
+    button{border:0;border-radius:10px;padding:11px 14px;min-height:44px;font-weight:700;cursor:pointer}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .primary{background:#2446a6;color:#fff;width:100%;margin-top:10px}
+    .secondary{background:#eef2ff;color:#203b8b;border:1px solid #cbd5ff}
+    .buttonrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .buttonrow button{flex:1}
+    .status{border-radius:10px;padding:10px 12px;background:#f3f6fb;border:1px solid var(--line);font-size:.9rem;overflow-wrap:anywhere}
+    .status.good{border-color:#a7dfbf;background:#effaf3;color:var(--green)}
+    .status.warn{border-color:#f0d18b;background:#fff9e9;color:var(--amber)}
+    .status.error{border-color:#eab4b4;background:#fff2f2;color:var(--red)}
+    progress{width:100%;height:14px;margin-top:10px;accent-color:var(--blue)}
+    .output{white-space:pre-wrap;overflow-wrap:anywhere;min-height:100px;max-height:460px;overflow:auto;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:.94rem}
+    .pill{display:inline-block;border-radius:999px;padding:3px 8px;background:#e9eefb;color:#243b7a;font-size:.78rem;font-weight:700}
+    .checks{padding-left:20px;margin:8px 0;color:var(--muted);font-size:.92rem}
+    footer{max-width:760px;margin:0 auto;padding:0 18px 24px;color:var(--muted);font-size:.8rem}
+    @media(min-width:600px){main{padding-top:22px}.panel{padding:20px}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">Revision Tracker · Prototype</div>
+    <h1>Revision Intelligence</h1>
+    <p>Local AI compatibility test · no AI API key, no AI inference server</p>
+  </header>
+  <main>
+    <section class="panel">
+      <span class="pill">Step 1 of our own AI project</span>
+      <h2 style="margin-top:10px">Check this iPhone can run a model locally</h2>
+      <p class="muted">This is a separate test page. It will not change your saved revision plans, account or existing app data.</p>
+      <div id="supportStatus" class="status warn" role="status" aria-live="polite">Checking browser support…</div>
+      <div class="buttonrow">
+        <button id="checkSupport" class="secondary" type="button">Check device support</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>1. Choose a test model</h2>
+      <p class="muted">Start with the tiny model to test compatibility. It is not powerful enough to be our finished study planner; this first test is only to prove local inference works.</p>
+      <label for="modelSelect">Local model</label>
+      <select id="modelSelect">
+        <option value="SmolLM2-135M-Instruct-q0f16-MLC" selected>Tiny compatibility test · SmolLM2 135M · smaller, weaker</option>
+        <option value="SmolLM2-360M-Instruct-q4f32_1-MLC">Larger test · SmolLM2 360M · more capable, heavier</option>
+      </select>
+      <p class="muted">The first download is several hundred megabytes. Use Wi-Fi, keep the page open, and make sure your phone has free storage and battery. A larger model may cause Safari to close the page on some iPhones.</p>
+      <button id="loadModel" class="primary" type="button">Download and load local AI</button>
+      <progress id="loadProgress" value="0" max="100" hidden></progress>
+      <p id="loadStatus" class="status" role="status" aria-live="polite">Model not loaded. Nothing will download until you press the button.</p>
+    </section>
+
+    <section class="panel">
+      <h2>2. Run a simple test</h2>
+      <p class="muted">Once the model has loaded, ask it a short question. The answer is generated on your device rather than sent to a paid AI inference API.</p>
+      <label for="testPrompt">Test prompt</label>
+      <textarea id="testPrompt" maxlength="1800">I am revising GCSE Chemistry. Create a 20-minute practice session about ionic bonding. Give me one clear learning goal, two short activities, and one question I can answer to check my understanding. Keep it concise.</textarea>
+      <button id="runTest" class="primary" type="button" disabled>Run local AI test</button>
+      <label for="modelOutput">AI response</label>
+      <div id="modelOutput" class="output" role="status" aria-live="polite">Your response will appear here.</div>
+      <p id="runStatus" class="muted" aria-live="polite"></p>
+    </section>
+
+    <section class="panel">
+      <h2>3. What to report back</h2>
+      <ul class="checks">
+        <li>Did the support check say WebGPU is available?</li>
+        <li>Did the model finish downloading and loading, or did Safari close the page?</li>
+        <li>Did the test produce a response, and was it coherent?</li>
+        <li>Roughly how long did the first download and response take?</li>
+      </ul>
+      <div class="status warn">Limits to know: the model weights and browser library are downloaded from the internet. Model inference happens locally, but this test does not guarantee future offline use. This tiny model may give weak or incorrect educational advice, so do not rely on its plan for real exam preparation.</div>
+    </section>
+  </main>
+  <footer>Prototype only. WebLLM requires a compatible browser with WebGPU. See the official <a href="https://webllm.mlc.ai/docs/user/get_started.html" target="_blank" rel="noopener noreferrer">WebLLM documentation</a>. The local model is not trained by us; Revision Intelligence is the specialised system we will build around it.</footer>
+
+  <script type="module">
+    const $ = (id) => document.getElementById(id);
+    const supportStatus = $('supportStatus');
+    const loadButton = $('loadModel');
+    const runButton = $('runTest');
+    const modelSelect = $('modelSelect');
+    const loadStatus = $('loadStatus');
+    const loadProgress = $('loadProgress');
+    const output = $('modelOutput');
+    const runStatus = $('runStatus');
+    let engine = null;
+    let loadedModelId = null;
+    let busy = false;
+
+    function status(el, text, kind='') {
+      el.textContent = text;
+      el.className = 'status' + (kind ? ' ' + kind : '');
+    }
+
+    async function checkSupport() {
+      status(supportStatus, 'Checking WebGPU support…');
+      if (!('gpu' in navigator)) {
+        status(supportStatus, 'WebGPU is not exposed by this browser. Local WebLLM inference will not run here. Check that you are using an up-to-date Safari and iOS version.', 'error');
+        return false;
+      }
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+          status(supportStatus, 'This browser exposes WebGPU, but it could not create a GPU adapter. Local AI is not available in the current environment.', 'error');
+          return false;
+        }
+        const info = adapter.info || {};
+        const label = [info.vendor, info.architecture].filter(Boolean).join(' · ');
+        status(supportStatus, 'WebGPU adapter detected. The browser can attempt local AI. ' + (label ? 'GPU: ' + label + '. ' : '') + 'This does not guarantee that the chosen model fits in memory.', 'good');
+        return true;
+      } catch (err) {
+        status(supportStatus, 'WebGPU check failed: ' + (err?.message || String(err)), 'error');
+        return false;
+      }
+    }
+
+    $('checkSupport').addEventListener('click', checkSupport);
+
+    async function loadModel() {
+      if (busy) return;
+      const supportOkay = await checkSupport();
+      if (!supportOkay) return;
+      const modelId = modelSelect.value;
+      busy = true;
+      loadButton.disabled = true;
+      modelSelect.disabled = true;
+      runButton.disabled = true;
+      loadProgress.hidden = false;
+      loadProgress.value = 0;
+      status(loadStatus, 'Loading the AI library and model… The first download may take a while. Keep this page open.');
+      try {
+        const { CreateMLCEngine } = await import('https://esm.run/@mlc-ai/web-llm@0.2.85');
+        engine = await CreateMLCEngine(modelId, {
+          initProgressCallback: (report) => {
+            const pct = (typeof report?.progress === 'number') ? Math.max(0, Math.min(100, Math.round(report.progress * 100))) : null;
+            if (pct !== null) {
+              loadProgress.value = pct;
+              status(loadStatus, (pct + '% · ') + (report.text || 'Downloading model…'));
+            } else if (report?.text) {
+              status(loadStatus, report.text);
+            }
+          }
+        });
+        loadedModelId = modelId;
+        loadProgress.value = 100;
+        status(loadStatus, 'Model loaded and ready. You can now run the test. This only confirms the selected model loaded on this device.', 'good');
+        runButton.disabled = false;
+      } catch (err) {
+        engine = null;
+        loadedModelId = null;
+        modelSelect.disabled = false;
+        loadProgress.hidden = true;
+        const detail = err?.message || String(err);
+        status(loadStatus, 'The model did not load. Error: ' + detail + ' Try reloading the page, checking Wi-Fi and storage, or choosing the tiny model. If Safari closes, the model may exceed its available memory.', 'error');
+      } finally {
+        busy = false;
+        loadButton.disabled = Boolean(engine);
+      }
+    }
+
+    loadButton.addEventListener('click', loadModel);
+    modelSelect.addEventListener('change', () => {
+      if (engine && modelSelect.value !== loadedModelId) {
+        status(loadStatus, 'A different model was selected. Reload this page before loading another model to release the current model from memory.', 'warn');
+        loadButton.disabled = false;
+      }
+    });
+
+    runButton.addEventListener('click', async () => {
+      if (!engine || busy) return;
+      const prompt = $('testPrompt').value.trim();
+      if (!prompt) {
+        runStatus.textContent = 'Enter a test prompt first.';
+        return;
+      }
+      busy = true;
+      runButton.disabled = true;
+      output.textContent = '';
+      runStatus.textContent = 'Generating locally… It may take a little while on a phone.';
+      try {
+        const stream = await engine.chat.completions.create({
+          messages: [
+            { role: 'system', content: 'You are a concise study helper prototype. Give a short, structured answer. Do not claim to know an exam board or official specification unless the user supplies it. If uncertain, say so. Your answer is experimental and must be checked by the student.' },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.3,
+          max_tokens: 220,
+          stream: true
+        });
+        for await (const chunk of stream) {
+          const text = chunk.choices?.[0]?.delta?.content;
+          if (text) output.textContent += text;
+        }
+        runStatus.textContent = 'Generation finished on this device. Check the answer for accuracy; this is a tiny test model, not the finished planner.';
+      } catch (err) {
+        runStatus.textContent = 'Generation failed: ' + (err?.message || String(err));
+      } finally {
+        busy = false;
+        runButton.disabled = !engine;
+      }
+    });
+
+    // Run a passive support check, but do not download anything without consent.
+    checkSupport();
+  </script>
+</body>
+</html>
