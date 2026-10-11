@@ -1,10 +1,10 @@
-/* Revision Tracker service worker v9.
+/* Revision Tracker service worker v10: shared Study Plan scheduler.
    Forces the browser to refresh the HTML, application JS, CSS and public config
    while online, while still keeping cached copies for offline use. */
-const CACHE_NAME = 'revision-tracker-v9';
+const CACHE_NAME = 'revision-tracker-v10-study-plans';
 const APP_FILES = [
   './', './index.html', './styles.css', './app.js',
-  './manifest.webmanifest', './icon.svg', './icon-180.png',
+  './study-planner-engine.js', './manifest.webmanifest', './icon.svg', './icon-180.png',
   './icon-192.png', './icon-512.png', './supabase-config.js'
 ];
 
@@ -36,6 +36,7 @@ self.addEventListener('fetch', event => {
   const refreshWhileOnline = event.request.mode === 'navigate' ||
     path.endsWith('/index.html') ||
     path.endsWith('/app.js') ||
+    path.endsWith('/study-planner-engine.js') ||
     path.endsWith('/styles.css') ||
     path.endsWith('/supabase-config.js') ||
     path.endsWith('/manifest.webmanifest');

@@ -156,10 +156,67 @@
       const subject = cleanSubjectName(old?.subject);
       if (!old || !DAYS.includes(old.day) || !subject || !String(old.task || '').trim()) continue;
       const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(old.time || '')) ? old.time : '17:00';
-      out.slots.push({id: typeof old.id === 'string' ? old.id : uid(), day: old.day, time, subject, task: String(old.task).slice(0,180), minutes: Math.max(1, Math.min(720, Number.parseInt(old.minutes ?? old.planned_minutes ?? 25,10) || 25)), completed: old.completed === true, notes: typeof old.notes === 'string' ? old.notes.slice(0,3000) : '', reminderMinutes: REMINDER_OPTIONS.includes(Number(old.reminderMinutes)) ? Number(old.reminderMinutes) : 10});
+      out.slots.push({id: typeof old.id === 'string' ? old.id : uid(), day: old.day, time, subject, task: String(old.task).slice(0,180), minutes: Math.max(1, Math.min(720, Number.parseInt(old.minutes ?? old.planned_minutes ?? 25,10) || 25)), completed: old.completed === true, notes: typeof old.notes === 'string' ? old.notes.slice(0,3000) : '', reminderMinutes: REMINDER_OPTIONS.includes(Number(old.reminderMinutes)) ? Number(old.reminderMinutes) : 10, planId: typeof old.planId === 'string' ? old.planId.slice(0,100) : null, planTopic: typeof old.planTopic === 'string' ? old.planTopic.slice(0,120) : '', source: old.source === 'study-plan' ? 'study-plan' : 'manual'});
     }
     return out;
   }
+  function defaultAvailability() {
+    return {
+      dayModes: Object.fromEntries(DAYS.map(day => [day, 'normal'])),
+      normalDailyMinutes: 60,
+      lightDailyMinutes: 25,
+      sessionMinutes: 25,
+      weekdayStart: '17:00',
+      weekendStart: '10:00'
+    };
+  }
+  function normalizeStudyAvailability(raw) {
+    const defaults = defaultAvailability();
+    const input = raw && typeof raw === 'object' ? raw : {};
+    const dayModes = {};
+    for (const day of DAYS) dayModes[day] = ['normal','light','off'].includes(input.dayModes?.[day]) ? input.dayModes[day] : defaults.dayModes[day];
+    const int = (value, min, max, fallback) => { const n = Number(value); return Number.isFinite(n) ? Math.max(min, Math.min(max, Math.floor(n))) : fallback; };
+    const validTime = value => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || ''));
+    return {
+      dayModes,
+      normalDailyMinutes: int(input.normalDailyMinutes, 15, 240, defaults.normalDailyMinutes),
+      lightDailyMinutes: int(input.lightDailyMinutes, 0, 120, defaults.lightDailyMinutes),
+      sessionMinutes: int(input.sessionMinutes, 15, 60, defaults.sessionMinutes),
+      weekdayStart: validTime(input.weekdayStart) ? input.weekdayStart : defaults.weekdayStart,
+      weekendStart: validTime(input.weekendStart) ? input.weekendStart : defaults.weekendStart
+    };
+  }
+  function normalizeStudyPlans(raw) {
+    if (!Array.isArray(raw)) return [];
+    const validStatuses = ['active','paused','archived','completed'];
+    const validPriorities = ['low','normal','high'];
+    const result = [];
+    for (const item of raw.slice(0, 50)) {
+      if (!item || typeof item !== 'object') continue;
+      const id = typeof item.id === 'string' && item.id ? item.id.slice(0,100) : uid();
+      const title = String(item.title || '').trim().slice(0,80);
+      const subject = cleanSubjectName(item.subject);
+      const deadline = /^\d{4}-\d{2}-\d{2}$/.test(String(item.deadline || '')) ? item.deadline : '';
+      if (!title || !subject || !deadline) continue;
+      const clamp = (value, min, max, fallback) => { const n = Number(value); return Number.isFinite(n) ? Math.max(min, Math.min(max, Math.floor(n))) : fallback; };
+      const topics = Array.isArray(item.topics) ? [...new Set(item.topics.map(t => String(t || '').trim().slice(0,120)).filter(Boolean))].slice(0,20) : [];
+      result.push({
+        id, title, subject,
+        currentLevel: String(item.currentLevel || '').trim().slice(0,100),
+        targetLevel: String(item.targetLevel || '').trim().slice(0,100),
+        goal: String(item.goal || title).trim().slice(0,1000),
+        topics,
+        deadline,
+        priority: validPriorities.includes(item.priority) ? item.priority : 'normal',
+        weeklyMinutes: clamp(item.weeklyMinutes, 15, 900, 90),
+        status: validStatuses.includes(item.status) ? item.status : 'active',
+        createdAt: typeof item.createdAt === 'string' ? item.createdAt : new Date().toISOString(),
+        updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : new Date().toISOString()
+      });
+    }
+    return result;
+  }
+
   function normalizeState(raw) {
     const storedSubjects = Array.isArray(raw?.subjects) ? raw.subjects : DEFAULT_SUBJECTS;
     // Migrate untouched profiles from either older default set to the current six.
@@ -179,7 +236,7 @@
     }
     const weeks = {};
     for (const [key, val] of Object.entries(rawWeeks)) if (/^\d{4}-\d{2}-\d{2}$/.test(key)) weeks[key] = normalizeWeek(val, [...known]);
-    return {version:2, subjects, weeks, timezone: typeof raw?.timezone === 'string' ? raw.timezone : (Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London')};
+    return {version:3, subjects, weeks, plans: normalizeStudyPlans(raw?.plans), availability: normalizeStudyAvailability(raw?.availability), timezone: typeof raw?.timezone === 'string' ? raw.timezone : (Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London')};
   }
   function loadState(storageKey = activeStorageKey) {
     try { return normalizeState(JSON.parse(localStorage.getItem(storageKey) || '{}')); }
@@ -213,7 +270,7 @@
     $('weekRange').textContent = weekTitle(selectedMonday);
     $('weekTag').textContent = dateKey(selectedMonday) === dateKey(nowWeek) ? 'CURRENT WEEK' : selectedMonday < nowWeek ? 'PREVIOUS WEEK' : 'FUTURE WEEK';
     $('weekSub').textContent = 'Week beginning Monday';
-    renderDays(wk); renderSubjectSummary(wk); renderSessions(wk); renderStats(wk); renderDaySelects(); renderMinuteLog(wk);
+    renderDays(wk); renderSubjectSummary(wk); renderSessions(wk); renderStats(wk); renderDaySelects(); renderMinuteLog(wk); if (typeof renderStudyManager === 'function') renderStudyManager();
   }
   function renderDays(wk) {
     const box = $('dayList'); box.replaceChildren();
@@ -290,8 +347,8 @@
     s.completed=$('sessionCompleted').checked;s.notes=$('sessionNotes').value.slice(0,3000);s.reminderMinutes=REMINDER_OPTIONS.includes(Number($('sessionReminder').value))?Number($('sessionReminder').value):10;
     persist();render();selectSession(s.id);showToast('Session saved.');
   }
-  function addSlot({day,time,subject,task,minutes,completed=false,notes='',reminderMinutes=10}) {
-    const wk=getWeek();wk.slots.push({id:uid(),day,time,subject,task,minutes,completed,notes,reminderMinutes:REMINDER_OPTIONS.includes(Number(reminderMinutes))?Number(reminderMinutes):10});
+  function addSlot({day,time,subject,task,minutes,completed=false,notes='',reminderMinutes=10,planId=null,planTopic='',source='manual'}) {
+    const wk=getWeek();wk.slots.push({id:uid(),day,time,subject,task,minutes,completed,notes,reminderMinutes:REMINDER_OPTIONS.includes(Number(reminderMinutes))?Number(reminderMinutes):10,planId:typeof planId==='string'?planId:null,planTopic:String(planTopic||''),source:source==='study-plan'?'study-plan':'manual'});
     if(!wk.days[day]||wk.days[day]==='Not planned')wk.days[day]='Planned';
     return wk.slots[wk.slots.length-1];
   }
@@ -350,6 +407,8 @@
       availableTime: $('aiAvailability').value.trim(),
       assessmentsAndDeadlines: $('aiAssessments').value.trim(),
       prioritiesAndDifficulties: $('aiPriorities').value.trim(),
+      activeStudyPlans: (state.plans || []).filter(p=>p.status==='active').map(p=>({title:p.title,subject:p.subject,goal:p.goal,deadline:p.deadline,weeklyMinutes:p.weeklyMinutes,priority:p.priority})),
+      sharedAvailability: state.availability,
       validSubjects: SUBJECTS,
       recentRevisionHistory: history,
       existingSessionsThisWeek: sortedSlots(wk).map(slot => ({
@@ -849,7 +908,7 @@ ${JSON.stringify(context, null, 2)}`;
       if(!data || !data.snapshot_data || typeof data.snapshot_data!=='object') throw new Error('That backup could not be found. Refresh the backup list.');
       clearTimeout(cloudSyncTimer);
       state=normalizeState(data.snapshot_data);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];
-      localStorage.setItem(activeStorageKey,JSON.stringify(state));render();renderSubjectsEditor();
+      localStorage.setItem(activeStorageKey,JSON.stringify(state));initializeStudyAvailabilityForm();render();renderSubjectsEditor();
       if(await syncCloud(true)) { setMessage('backupStatus',`Backup from ${new Date(data.created_at).toLocaleString('en-GB')} restored. Your previous cloud version was kept as a backup.`,false);await loadBackupHistory(); }
     } catch(error) { setMessage('backupStatus',`Restore failed: ${String(error.message||error).slice(0,180)}`,true); }
   });
@@ -861,7 +920,7 @@ ${JSON.stringify(context, null, 2)}`;
     try { localStorage.setItem(LAST_USER_KEY,user.id); } catch {}
     clearTimeout(cloudSyncTimer);
     state=loadState(activeStorageKey);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];
-    render();renderSubjectsEditor();updateAuthUI();
+    initializeStudyAvailabilityForm();render();renderSubjectsEditor();updateAuthUI();
     try {
       const {data,error}=await supabaseClient.from('revision_data').select('data,updated_at').eq('user_id',user.id).maybeSingle();
       if(error) throw error;
@@ -873,7 +932,7 @@ ${JSON.stringify(context, null, 2)}`;
           remoteSubjects.every((subject, index) => subject === LEGACY_DEFAULT_SUBJECTS[index]);
         state=normalizeState(data.data);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];
         localStorage.setItem(activeStorageKey,JSON.stringify(state));
-        render();renderSubjectsEditor();
+        initializeStudyAvailabilityForm();render();renderSubjectsEditor();
         if (wasPreviousDefault || wasLegacyDefault) {
           // Save the migrated default list remotely so it remains consistent across devices.
           await syncCloud(false);
@@ -928,21 +987,21 @@ ${JSON.stringify(context, null, 2)}`;
     await disablePush();
     const {error}=await supabaseClient.auth.signOut();
     if(error) { setCloudMessage(`Sign out failed: ${error.message}`,true); return; }
-    currentUser=null;activeStorageKey=STORAGE_KEY;try{localStorage.removeItem(LAST_USER_KEY);}catch{}state=loadState(STORAGE_KEY);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];selectedSessionId=null;render();renderSubjectsEditor();updateAuthUI();loadBackupHistory();
+    currentUser=null;activeStorageKey=STORAGE_KEY;try{localStorage.removeItem(LAST_USER_KEY);}catch{}state=loadState(STORAGE_KEY);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];selectedSessionId=null;initializeStudyAvailabilityForm();render();renderSubjectsEditor();updateAuthUI();loadBackupHistory();
   });
   $('syncNow').addEventListener('click',()=>syncCloud(true));
   $('uploadGuestData').addEventListener('click',async()=>{
     if(!currentUser) return;
     if(!confirm('Copy the revision data currently stored in the guest/local profile to this signed-in account? This replaces the account copy and should only be used for your own data.')) return;
     const guest=loadState(STORAGE_KEY);
-    state=normalizeState(guest);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];localStorage.setItem(activeStorageKey,JSON.stringify(state));render();renderSubjectsEditor();
+    state=normalizeState(guest);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];localStorage.setItem(activeStorageKey,JSON.stringify(state));initializeStudyAvailabilityForm();render();renderSubjectsEditor();
     await syncCloud(true);await loadBackupHistory();
   });
   window.addEventListener('online',()=>queueCloudSync(100));
   if(supabaseClient) {
     supabaseClient.auth.onAuthStateChange((event,session)=>{
       if(session?.user) setTimeout(()=>activateUser(session.user),0);
-      else if(event==='SIGNED_OUT' && currentUser) { currentUser=null;activeStorageKey=STORAGE_KEY;try{localStorage.removeItem(LAST_USER_KEY);}catch{}state=loadState(STORAGE_KEY);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];render();renderSubjectsEditor();updateAuthUI(); }
+      else if(event==='SIGNED_OUT' && currentUser) { currentUser=null;activeStorageKey=STORAGE_KEY;try{localStorage.removeItem(LAST_USER_KEY);}catch{}state=loadState(STORAGE_KEY);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];initializeStudyAvailabilityForm();render();renderSubjectsEditor();updateAuthUI(); }
     });
     supabaseClient.auth.getSession().then(({data})=>{if(data.session?.user) activateUser(data.session.user); else {updateAuthUI();renderSubjectsEditor();}}).catch(()=>{updateAuthUI();renderSubjectsEditor();});
   } else { updateAuthUI();renderSubjectsEditor(); }
@@ -991,7 +1050,7 @@ ${JSON.stringify(context, null, 2)}`;
 
   // Backup and import. Supports this app's backup format and the user's earlier Python revision_data.json format.
   function downloadFile(name,content,type) { const blob=new Blob([content],{type});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000); }
-  $('exportData').addEventListener('click',()=>{downloadFile(`revision-backup-${dateKey(new Date())}.json`,JSON.stringify({app:'GCSE Revision Tracker',version:2,exportedAt:new Date().toISOString(),subjects:state.subjects,weeks:state.weeks},null,2),'application/json');setMessage('dataMessage','Backup exported, including your selected subjects. Store it somewhere safe.');});
+  $('exportData').addEventListener('click',()=>{downloadFile(`revision-backup-${dateKey(new Date())}.json`,JSON.stringify({app:'GCSE Revision Tracker',version:3,exportedAt:new Date().toISOString(),subjects:state.subjects,weeks:state.weeks,plans:state.plans,availability:state.availability},null,2),'application/json');setMessage('dataMessage','Backup exported, including subjects, sessions, study plans and availability. Store it somewhere safe.');});
   $('importData').addEventListener('change',async e=>{
     const file=e.target.files && e.target.files[0];if(!file)return;
     try{
@@ -1001,7 +1060,7 @@ ${JSON.stringify(context, null, 2)}`;
       for(const [k,v] of Object.entries(incoming)){if(/^\d{4}-\d{2}-\d{2}$/.test(k)){converted[k]=normalizeWeek(v);count++;}}
       if(!count)throw new Error('No dated weeks found in this file.');
       if(!confirm(`Import ${count} week records? If dates already exist, they will be replaced.`))return;
-      state.weeks={...state.weeks,...converted};if(Array.isArray(obj.subjects))state.subjects=normalizeSubjectList(obj.subjects);state=normalizeState(state);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];persist();render();renderSubjectsEditor();setMessage('dataMessage',`Imported ${count} weeks and restored subject preferences successfully.`);
+      state.weeks={...state.weeks,...converted};if(Array.isArray(obj.subjects))state.subjects=normalizeSubjectList(obj.subjects);if(Array.isArray(obj.plans))state.plans=obj.plans;if(obj.availability&&typeof obj.availability==='object')state.availability=obj.availability;state=normalizeState(state);SUBJECTS=[...state.subjects];draftSubjects=[...SUBJECTS];persist();render();renderSubjectsEditor();initializeStudyAvailabilityForm();setMessage('dataMessage',`Imported ${count} weeks and restored subject preferences, study plans and availability where present.`);
     }catch(err){setMessage('dataMessage',`Import failed: ${err.message}`,true);}finally{e.target.value='';}
   });
   function icsEscape(s) { return String(s).replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;'); }
@@ -1020,6 +1079,381 @@ ${JSON.stringify(context, null, 2)}`;
   });
 
   $('exportCalendarFromReminders').addEventListener('click',()=> $('exportCalendar').click());
+
+  // ---------------------------------------------------------------
+  // STUDY PLAN MANAGER — Phase 1: deterministic shared scheduler.
+  // AI-based syllabus research and effort estimation are intentionally
+  // kept for Phase 2; this engine only schedules the goals the user enters.
+  // ---------------------------------------------------------------
+  let editingStudyPlanId = null;
+  let pendingStudyProposal = null;
+  let availabilityFormDirty = false;
+
+  function readAvailabilityForm() {
+    const dayModes = {};
+    for (const day of DAYS) {
+      const control = $(`availability-${day}`);
+      dayModes[day] = control && ['normal','light','off'].includes(control.value) ? control.value : 'normal';
+    }
+    return normalizeStudyAvailability({
+      dayModes,
+      normalDailyMinutes: $('studyNormalLimit')?.value,
+      lightDailyMinutes: $('studyLightLimit')?.value,
+      sessionMinutes: $('studySessionLength')?.value,
+      weekdayStart: $('studyWeekdayStart')?.value,
+      weekendStart: $('studyWeekendStart')?.value
+    });
+  }
+
+  function initializeStudyAvailabilityForm() {
+    const availability = normalizeStudyAvailability(state.availability);
+    const daysBox = $('studyAvailabilityDays');
+    if (!daysBox) return;
+    if (!daysBox.dataset.built) {
+      daysBox.replaceChildren();
+      for (const day of DAYS) {
+        const row = document.createElement('label'); row.className = 'availability-day-row';
+        const name = document.createElement('span'); name.className = 'availability-day-name'; name.textContent = day;
+        const select = document.createElement('select'); select.id = `availability-${day}`; select.setAttribute('aria-label', `${day} availability`);
+        for (const [value, labelText] of [['normal','Normal day'],['light','Keep it light'],['off','Keep free']]) {
+          const option = document.createElement('option'); option.value = value; option.textContent = labelText; select.append(option);
+        }
+        select.addEventListener('change', () => { availabilityFormDirty = true; });
+        row.append(name, select); daysBox.append(row);
+      }
+      daysBox.dataset.built = 'true';
+      for (const id of ['studyNormalLimit','studyLightLimit','studySessionLength','studyWeekdayStart','studyWeekendStart']) {
+        const input = $(id); if (input) input.addEventListener('change', () => { availabilityFormDirty = true; });
+      }
+    }
+    $('studyNormalLimit').value = String(availability.normalDailyMinutes);
+    $('studyLightLimit').value = String(availability.lightDailyMinutes);
+    $('studySessionLength').value = String(availability.sessionMinutes);
+    $('studyWeekdayStart').value = availability.weekdayStart;
+    $('studyWeekendStart').value = availability.weekendStart;
+    for (const day of DAYS) $(`availability-${day}`).value = availability.dayModes[day];
+    availabilityFormDirty = false;
+  }
+
+  function fillStudySubjectSelect(selected = '') {
+    const select = $('planSubject');
+    if (!select) return;
+    const old = selected || select.value;
+    const values = [...new Set([...SUBJECTS, ...(state.plans || []).map(p => p.subject).filter(Boolean)])];
+    select.replaceChildren();
+    for (const subject of values) { const option = document.createElement('option'); option.value = subject; option.textContent = subject; select.append(option); }
+    if (values.includes(old)) select.value = old;
+  }
+
+  function formatStudyDate(key) {
+    const d = window.RevisionStudyPlannerEngine?.dateFromKey(key);
+    return d ? d.toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'}) : key;
+  }
+
+  function studyPlanSlots(planId) {
+    const all = [];
+    for (const [mondayKey, week] of Object.entries(state.weeks)) {
+      for (const slot of week.slots || []) {
+        if (slot.planId !== planId) continue;
+        const d = addDays(parseDateKey(mondayKey), DAYS.indexOf(slot.day));
+        all.push({ ...slot, date: dateKey(d) });
+      }
+    }
+    return all.sort((a,b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+  }
+
+  function renderStudyPlanList() {
+    const list = $('studyPlanList'); if (!list) return;
+    list.replaceChildren();
+    const plans = Array.isArray(state.plans) ? state.plans : [];
+    $('studyPlanCount').textContent = `${plans.length} plan${plans.length === 1 ? '' : 's'}`;
+    if (!plans.length) {
+      const empty = document.createElement('div'); empty.className = 'empty-state';
+      empty.textContent = 'No study plans yet. Create a goal above, then review the proposed schedule before saving it.';
+      list.append(empty); return;
+    }
+    const order = {active:0, paused:1, completed:2, archived:3};
+    [...plans].sort((a,b) => (order[a.status] ?? 4) - (order[b.status] ?? 4) || a.deadline.localeCompare(b.deadline)).forEach(plan => {
+      const card = document.createElement('article'); card.className = 'study-plan-card';
+      const header = document.createElement('div'); header.className = 'study-plan-card-head';
+      const title = document.createElement('h3'); title.textContent = plan.title;
+      const badge = document.createElement('span'); badge.className = `study-plan-badge ${plan.status}`; badge.textContent = plan.status;
+      header.append(title,badge); card.append(header);
+      const meta = document.createElement('p'); meta.className = 'study-plan-meta';
+      meta.textContent = `${plan.subject} · Deadline ${formatStudyDate(plan.deadline)} · ${plan.weeklyMinutes} min/week · ${plan.priority} priority`;
+      card.append(meta);
+      const target = document.createElement('p'); target.className = 'study-plan-goal';
+      const level = [plan.currentLevel, plan.targetLevel].filter(Boolean).join(' → ');
+      target.textContent = `${level ? `${level}. ` : ''}${plan.goal}`; card.append(target);
+      const slots = studyPlanSlots(plan.id);
+      const done = slots.filter(s => s.completed).length;
+      const progress = document.createElement('p'); progress.className = 'study-plan-meta';
+      progress.textContent = `${done} of ${slots.length} scheduled sessions completed${slots.some(s => s.notes) ? ' · notes recorded' : ''}`;
+      card.append(progress);
+      const buttonRow = document.createElement('div'); buttonRow.className = 'button-row study-plan-actions';
+      const addAction = (action, text, cls='secondary-button') => { const button = document.createElement('button'); button.type='button'; button.className=cls; button.dataset.planAction=action; button.dataset.planId=plan.id; button.textContent=text; buttonRow.append(button); };
+      if (plan.status !== 'archived' && plan.status !== 'completed') addAction('edit','Edit goal');
+      if (plan.status === 'active') addAction('pause','Pause');
+      if (plan.status === 'paused') addAction('resume','Resume');
+      if (plan.status === 'active' || plan.status === 'paused') addAction('complete','Mark complete');
+      if (plan.status !== 'archived' && plan.status !== 'completed') addAction('archive','Archive');
+      addAction('delete','Delete permanently','danger-button');
+      card.append(buttonRow); list.append(card);
+    });
+  }
+
+  function renderStudyManager() {
+    if (!$('studyPlanList')) return;
+    fillStudySubjectSelect();
+    renderStudyPlanList();
+  }
+
+  function allExistingSessionsForEngine() {
+    const result = [];
+    for (const [mondayKey, week] of Object.entries(state.weeks)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(mondayKey)) continue;
+      for (const slot of week.slots || []) {
+        const d = addDays(parseDateKey(mondayKey), DAYS.indexOf(slot.day));
+        result.push({date: dateKey(d), day: slot.day, time: slot.time, minutes: slot.minutes, completed: slot.completed === true, planId: slot.planId || null, source: slot.source || 'manual', subject: slot.subject, task: slot.task});
+      }
+    }
+    return result;
+  }
+
+  function activePlansWithCandidate(candidate, replacingId) {
+    const plans = (state.plans || []).map(plan => replacingId && plan.id === replacingId ? candidate : plan);
+    if (candidate && !replacingId) plans.push(candidate);
+    return plans.filter(plan => plan && plan.status === 'active');
+  }
+
+  function proposeStudySchedule(candidate = null, mode = 'rebalance', replacingId = null, message = '') {
+    if (!window.RevisionStudyPlannerEngine) {
+      setMessage('studyPlanProposalStatus', 'The scheduling engine did not load. Refresh the website before trying again.', true); return;
+    }
+    const plans = activePlansWithCandidate(candidate, replacingId);
+    const availability = readAvailabilityForm();
+    const today = new Date();
+    const proposal = window.RevisionStudyPlannerEngine.buildProposal({
+      plans, availability, existingSessions: allExistingSessionsForEngine(),
+      todayKey: dateKey(today), currentTime: `${String(today.getHours()).padStart(2,'0')}:${String(today.getMinutes()).padStart(2,'0')}`
+    });
+    pendingStudyProposal = { candidate, mode, replacingId, proposal, availability };
+    renderStudyProposal(proposal, message);
+    $('studyPlanProposalCard').classList.remove('hidden');
+    $('studyPlanProposalCard').scrollIntoView({behavior:'smooth', block:'start'});
+  }
+
+  function renderStudyProposal(proposal, message = '') {
+    const headline = $('studyPlanFeasibility');
+    headline.className = 'study-feasibility ' + (proposal.unplacedMinutes > 0 ? 'warning' : 'positive');
+    if (!proposal.planCount) {
+      headline.textContent = 'There are no active plans to schedule.';
+    } else if (proposal.unplacedMinutes > 0) {
+      headline.textContent = `Capacity warning: ${proposal.scheduledMinutes} of ${proposal.requestedMinutes} requested minutes fit. About ${proposal.unplacedMinutes} minutes could not be scheduled within your limits.`;
+    } else {
+      headline.textContent = `Capacity check passed: all ${proposal.scheduledMinutes} requested minutes fit within your current limits and existing commitments.`;
+    }
+    const summary = $('studyPlanProposalSummary');
+    summary.textContent = `${proposal.sessions.length} proposed sessions · ${proposal.scheduledMinutes} minutes scheduled · starts ${formatStudyDate(proposal.startDate)} · plans considered: ${proposal.planCount}. This checks calendar capacity only; it cannot guarantee a grade or goal outcome.`;
+    const breakdown = $('studyPlanProposalBreakdown'); breakdown.replaceChildren();
+    for (const item of proposal.byPlan || []) {
+      const row = document.createElement('div'); row.className = 'study-plan-breakdown-row';
+      const name = document.createElement('strong'); name.textContent = item.title;
+      const detail = document.createElement('span'); detail.textContent = `${item.scheduledMinutes}/${item.requestedMinutes} min · ${item.sessions} sessions`;
+      row.append(name, detail); breakdown.append(row);
+    }
+    const box = $('studyPlanProposalSessions'); box.replaceChildren();
+    const sessions = [...proposal.sessions].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
+    for (const s of sessions.slice(0,60)) {
+      const row = document.createElement('div'); row.className = 'study-proposal-session';
+      const line = document.createElement('div'); line.className='study-proposal-session-head';
+      const date = document.createElement('strong'); date.textContent = formatStudyDate(s.date);
+      const time = document.createElement('span'); time.textContent = `${s.time} · ${s.minutes} min`;
+      line.append(date,time);
+      const task = document.createElement('p'); task.textContent = `${s.subject}: ${s.task}`;
+      const plan = pendingStudyProposal?.candidate?.id === s.planId ? pendingStudyProposal.candidate : (state.plans || []).find(p=>p.id===s.planId);
+      const owner = document.createElement('small'); owner.textContent = `Plan: ${plan?.title || 'Active study plan'}`;
+      row.append(line,task,owner); box.append(row);
+    }
+    if (sessions.length > 60) { const note = document.createElement('p'); note.className='muted small-help'; note.textContent=`Showing the first 60 of ${sessions.length} proposed sessions. The full proposal will be saved when approved.`; box.append(note); }
+    const warnings = [...(proposal.warnings || [])]; if (message) warnings.unshift(message);
+    const status = $('studyPlanProposalStatus');
+    status.textContent = warnings.join(' ');
+    status.className = 'feedback' + (proposal.unplacedMinutes > 0 ? ' status-warning' : '');
+    // Empty proposals are still approvable: they may intentionally clear future generated sessions
+    // when every day is protected or the existing commitments leave no room.
+    $('approveStudyPlanProposal').disabled = false;
+  }
+
+  function parsePlanForm() {
+    const title = $('planTitle').value.trim();
+    const subject = $('planSubject').value;
+    const deadline = $('planDeadline').value;
+    const goal = $('planGoal').value.trim();
+    const currentLevel = $('planCurrentLevel').value.trim();
+    const targetLevel = $('planTargetLevel').value.trim();
+    const priority = $('planPriority').value;
+    const weeklyMinutes = Number($('planWeeklyMinutes').value);
+    const topics = [...new Set($('planTopics').value.split(/[\n,;]+/).map(x=>x.trim()).filter(Boolean))].slice(0,20);
+    const today = new Date(); today.setHours(0,0,0,0);
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(deadline) ? new Date(`${deadline}T00:00:00`) : null;
+    if (!title || title.length > 80) throw new Error('Give this plan a title of 1–80 characters.');
+    if (!SUBJECTS.includes(subject)) throw new Error('Choose one of your selected subjects. Add the subject first if it is missing.');
+    if (!goal || goal.length > 1000) throw new Error('Describe what you need to improve, in 1–1000 characters.');
+    if (!d || Number.isNaN(d.getTime()) || d < today) throw new Error('Choose a deadline today or later.');
+    if (d > addDays(today,365)) throw new Error('For this first version, choose a deadline within the next 365 days.');
+    if (!Number.isInteger(weeklyMinutes) || weeklyMinutes < 15 || weeklyMinutes > 900) throw new Error('Weekly study effort must be 15–900 minutes.');
+    if (!['low','normal','high'].includes(priority)) throw new Error('Choose a valid priority.');
+    if (state.plans.length >= 50 && !editingStudyPlanId) throw new Error('This account already has 50 plans. Archive or delete an old plan first.');
+    return {
+      id: editingStudyPlanId || uid(), title, subject, currentLevel, targetLevel,
+      goal, topics: topics.length ? topics : [goal.slice(0,120)], deadline, priority,
+      weeklyMinutes, status: editingStudyPlanId ? (state.plans.find(p=>p.id===editingStudyPlanId)?.status || 'active') : 'active',
+      createdAt: editingStudyPlanId ? (state.plans.find(p=>p.id===editingStudyPlanId)?.createdAt || new Date().toISOString()) : new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  function resetStudyPlanForm() {
+    editingStudyPlanId = null;
+    $('studyPlanForm').reset();
+    $('planWeeklyMinutes').value = '90';
+    $('planPriority').value = 'normal';
+    $('planDeadline').value = dateKey(addDays(new Date(),30));
+    $('studyPlanFormTitle').textContent = 'Create a study goal';
+    $('generateStudyPlanProposal').textContent = 'Generate schedule proposal';
+    $('cancelStudyPlanEdit').classList.add('hidden');
+    fillStudySubjectSelect(SUBJECTS[0] || 'Maths');
+  }
+
+  $('saveStudyAvailability').addEventListener('click', () => {
+    state.availability = readAvailabilityForm();
+    availabilityFormDirty = false;
+    if (persist()) { setMessage('studyAvailabilityStatus','Availability saved. Generate a new proposal to apply these limits to planned sessions.',false); renderStudyManager(); }
+  });
+
+  $('studyPlanForm').addEventListener('submit', event => {
+    event.preventDefault();
+    let candidate;
+    try { candidate = parsePlanForm(); }
+    catch (error) { setMessage('studyPlanFormStatus',error.message,true); return; }
+    const mode = editingStudyPlanId ? 'edit' : 'create';
+    const replacingId = editingStudyPlanId;
+    proposeStudySchedule(candidate,mode,replacingId,'Review the shared schedule before approval. Existing manual sessions and completed study-plan sessions are preserved.');
+    setMessage('studyPlanFormStatus','Proposal ready. Nothing has changed in your calendar yet.',false);
+  });
+
+  $('cancelStudyPlanEdit').addEventListener('click', () => { resetStudyPlanForm(); setMessage('studyPlanFormStatus','Editing cancelled.',false); });
+  $('rebalanceStudyPlans').addEventListener('click', () => {
+    proposeStudySchedule(null,'rebalance',null,'This proposal coordinates every active plan. Future incomplete plan-generated sessions are replaced only after approval.');
+  });
+
+  $('discardStudyPlanProposal').addEventListener('click', () => {
+    pendingStudyProposal = null; $('studyPlanProposalCard').classList.add('hidden');
+    setMessage('studyPlanFormStatus','Proposal discarded. Your saved plans and calendar are unchanged.',false);
+  });
+
+  function getSlotDateKey(mondayKey, slot) {
+    if (!DAYS.includes(slot.day)) return '';
+    return dateKey(addDays(parseDateKey(mondayKey), DAYS.indexOf(slot.day)));
+  }
+  function removeFuturePendingPlanSessions(todayKey) {
+    for (const [mondayKey, week] of Object.entries(state.weeks)) {
+      week.slots = (week.slots || []).filter(slot => {
+        if (!slot.planId || slot.source !== 'study-plan' || slot.completed) return true;
+        const d = getSlotDateKey(mondayKey, slot);
+        return !d || d < todayKey;
+      });
+    }
+  }
+  function applyStudyProposal() {
+    if (!pendingStudyProposal) { showToast('Generate a proposal first.'); return; }
+    const pending = pendingStudyProposal;
+    if (pending.candidate) {
+      if (pending.replacingId) state.plans = state.plans.map(p=>p.id===pending.replacingId ? pending.candidate : p);
+      else state.plans.push(pending.candidate);
+    }
+    state.availability = pending.availability || readAvailabilityForm();
+    const todayKey = dateKey(new Date());
+    removeFuturePendingPlanSessions(todayKey);
+    for (const proposed of pending.proposal.sessions) {
+      const date = window.RevisionStudyPlannerEngine.dateFromKey(proposed.date);
+      if (!date) continue;
+      const mondayKey = dateKey(weekStart(date));
+      if (!state.weeks[mondayKey]) state.weeks[mondayKey] = emptyWeek(SUBJECTS);
+      const week = state.weeks[mondayKey];
+      const slot = {
+        id: uid(), day: proposed.day, time: proposed.time, subject: proposed.subject,
+        task: proposed.task, minutes: proposed.minutes, completed: false, notes: '',
+        reminderMinutes: 10, planId: proposed.planId, planTopic: proposed.planTopic || '', source: 'study-plan'
+      };
+      week.slots.push(slot);
+      if (week.days[slot.day] === 'Not planned') week.days[slot.day] = 'Planned';
+    }
+    pendingStudyProposal = null;
+    $('studyPlanProposalCard').classList.add('hidden');
+    resetStudyPlanForm();
+    if (persist()) {
+      render();
+      const scheduled = pending.proposal.sessions.length;
+      const warning = pending.proposal.unplacedMinutes > 0 ? ` ${pending.proposal.unplacedMinutes} minutes could not fit; consider a later deadline, another availability setting, or a different weekly target.` : '';
+      setMessage('studyPlanFormStatus',`Schedule saved: ${scheduled} sessions across ${pending.proposal.planCount} active plans.${warning}`,pending.proposal.unplacedMinutes > 0);
+      showToast(`Saved ${scheduled} study-plan sessions.`);
+    }
+  }
+  $('approveStudyPlanProposal').addEventListener('click',applyStudyProposal);
+
+  function editStudyPlan(plan) {
+    editingStudyPlanId = plan.id;
+    $('studyPlanFormTitle').textContent = 'Edit study goal';
+    $('generateStudyPlanProposal').textContent = 'Preview updated schedule';
+    $('cancelStudyPlanEdit').classList.remove('hidden');
+    $('planTitle').value = plan.title;
+    fillStudySubjectSelect(plan.subject); $('planSubject').value = plan.subject;
+    $('planCurrentLevel').value = plan.currentLevel || '';
+    $('planTargetLevel').value = plan.targetLevel || '';
+    $('planDeadline').value = plan.deadline;
+    $('planPriority').value = plan.priority;
+    $('planWeeklyMinutes').value = String(plan.weeklyMinutes);
+    $('planGoal').value = plan.goal;
+    $('planTopics').value = (plan.topics || []).join('\n');
+    $('studyPlanForm').scrollIntoView({behavior:'smooth',block:'start'});
+    setMessage('studyPlanFormStatus','Edit the goal and preview a replacement schedule. Nothing will be changed until you approve the proposal.',false);
+  }
+
+  function previewCurrentPlans(message) {
+    proposeStudySchedule(null,'rebalance',null,message || 'Review the updated schedule before approval.');
+  }
+
+  $('studyPlanList').addEventListener('click', event => {
+    const button = event.target.closest('button[data-plan-action]');
+    if (!button) return;
+    const plan = state.plans.find(p=>p.id===button.dataset.planId);
+    if (!plan) return;
+    const action = button.dataset.planAction;
+    if (action === 'edit') { editStudyPlan(plan); return; }
+    if (action === 'pause' || action === 'resume' || action === 'archive' || action === 'complete') {
+      const next = action === 'pause' ? 'paused' : action === 'resume' ? 'active' : action === 'archive' ? 'archived' : 'completed';
+      const labels = {paused:'paused',active:'resumed',archived:'archived',completed:'marked complete'};
+      const candidate = {...plan, status: next, updatedAt: new Date().toISOString()};
+      proposeStudySchedule(candidate,'status',plan.id,`This proposal will mark “${plan.title}” as ${labels[next]}. Approve it to apply the status change and replace future incomplete study-plan sessions.`);
+      return;
+    }
+    if (action === 'delete') {
+      if (!confirm(`Permanently delete “${plan.title}” and all sessions linked to this plan, including its history? This cannot be undone.`)) return;
+      state.plans = state.plans.filter(p=>p.id!==plan.id);
+      for (const week of Object.values(state.weeks)) week.slots = (week.slots || []).filter(slot=>slot.planId!==plan.id);
+      if (editingStudyPlanId===plan.id) resetStudyPlanForm();
+      if (!persist()) return;
+      render();
+      previewCurrentPlans(`Deleted “${plan.title}”. Review the rebalanced proposal for remaining active plans.`);
+    }
+  });
+
+  // Initialize preferences and plans UI once the saved profile has loaded.
+  initializeStudyAvailabilityForm();
+  resetStudyPlanForm();
+  renderStudyManager();
 
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     navigator.serviceWorker.register('./service-worker.js').catch(() => { $('saveIndicator').textContent='Offline caching unavailable'; });

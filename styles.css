@@ -22,3 +22,31 @@
 .subject-suggestion-kind{font-size:10px;color:var(--muted);white-space:nowrap;flex:0 0 auto}
 .subject-suggestion-empty{font-size:12px;color:var(--muted);padding:10px}
 @media(max-width:420px){.subject-suggestions{max-height:250px}.subject-suggestion-option{padding:9px 8px}}
+
+/* Smart Study Manager: Phase 1 shared scheduling UI */
+.availability-days{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 10px;margin-top:10px}
+.availability-day-row{display:flex!important;align-items:center;justify-content:space-between;gap:9px;border:1px solid var(--line);border-radius:11px;padding:7px 9px;background:#fff;font-weight:500!important;min-width:0}
+.availability-day-name{font-weight:750;font-size:13px}
+.availability-day-row select{width:auto;min-width:135px;max-width:62%;min-height:38px;padding:7px;font-size:12px}
+.study-plan-list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.study-plan-card{border:1px solid var(--line);border-radius:14px;padding:13px;background:#fff;min-width:0}
+.study-plan-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.study-plan-card h3{margin:0!important;font-size:15px!important;overflow-wrap:anywhere}
+.study-plan-meta{font-size:12px;color:var(--muted);margin:7px 0;overflow-wrap:anywhere}
+.study-plan-goal{font-size:13px;margin:7px 0;overflow-wrap:anywhere}
+.study-plan-badge{font-size:10px;text-transform:uppercase;letter-spacing:.04em;border-radius:999px;padding:4px 8px;background:#eef1f6;color:#475467;white-space:nowrap;font-weight:800}
+.study-plan-badge.active{background:#e9f8f0;color:#12734b}.study-plan-badge.paused{background:#fff4df;color:#8a4b10}.study-plan-badge.completed{background:#e8edff;color:#315ce8}.study-plan-badge.archived{background:#edf0f4;color:#667085}
+.study-plan-actions button{font-size:12px;min-height:36px;padding:7px 10px}
+.study-feasibility{padding:12px;border-radius:12px;font-weight:750;font-size:13px;margin:8px 0}
+.study-feasibility.positive{background:#e9f8f0;color:#12734b;border:1px solid #c6ecd7}
+.study-feasibility.warning{background:#fff4df;color:#8a4b10;border:1px solid #f2dcab}
+.study-plan-breakdown{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.study-plan-breakdown-row{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;font-size:12px}
+.study-plan-breakdown-row strong{overflow-wrap:anywhere}.study-plan-breakdown-row span{color:var(--muted);white-space:nowrap}
+.study-proposal-list{display:flex;flex-direction:column;gap:7px;max-height:520px;overflow:auto}
+.study-proposal-session{padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.study-proposal-session-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px}
+.study-proposal-session-head span{white-space:nowrap;color:var(--muted)}
+.study-proposal-session p{font-size:13px;margin:5px 0}.study-proposal-session small{display:block;font-size:11px;color:var(--muted)}
+.status-warning{color:#8a4b10}
+@media(max-width:500px){.availability-days{grid-template-columns:1fr}.availability-day-row select{min-width:0}.study-plan-breakdown-row{flex-direction:column;gap:3px}.study-proposal-session-head{align-items:flex-start;flex-direction:column;gap:2px}}

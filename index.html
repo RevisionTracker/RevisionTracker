@@ -43,7 +43,8 @@
     <nav class="tabs" aria-label="Tracker sections">
       <button class="tab active" data-tab="today" type="button">Overview</button>
       <button class="tab" data-tab="sessions" type="button">Sessions</button>
-      <button class="tab" data-tab="ai" type="button">AI planner</button>
+      <button class="tab" data-tab="plans" type="button">Study plans</button>
+      <button class="tab" data-tab="ai" type="button">AI tools</button>
       <button class="tab" data-tab="data" type="button">Data & reminders</button>
       <button class="tab" data-tab="account" type="button">Account & sync</button>
     </nav>
@@ -124,6 +125,70 @@
         <textarea id="aiJson" rows="8" placeholder='{"sessions":[{"day":"Monday","time":"17:00","subject":"German","task":"Practise speaking answers","minutes":20}]}'></textarea>
         <button id="importAi" type="button" class="primary-button full-button">Validate and import sessions</button>
         <p id="aiMessage" class="feedback" aria-live="polite"></p>
+      </section>
+    </section>
+
+    <section id="tab-plans" class="tab-page">
+      <section class="card section-card highlight-card">
+        <span class="eyebrow">SMART SCHEDULING · PHASE 1</span>
+        <h2>AI Study Manager</h2>
+        <p>Create study goals with deadlines, estimate the weekly effort, and let the shared scheduler propose sessions across all active plans. It checks existing commitments, keeps protected days free, and shows capacity problems before anything is added.</p>
+        <p><strong>Honest status:</strong> this first phase builds the plan manager and scheduling engine. Automatic syllabus research and AI-estimated workload are the next phase; for now, enter the topics you need to work on and a rough weekly time estimate.</p>
+      </section>
+
+      <section class="card section-card">
+        <div class="section-heading"><div><h2>My availability</h2><p class="muted">These limits apply across every active plan, not separately to each subject.</p></div></div>
+        <div class="form-grid">
+          <label>Normal-day limit (minutes)<input id="studyNormalLimit" type="number" min="15" max="240" step="5" value="60"></label>
+          <label>Light-day limit (minutes)<input id="studyLightLimit" type="number" min="0" max="120" step="5" value="25"></label>
+          <label>Preferred session length (minutes)<input id="studySessionLength" type="number" min="15" max="60" step="5" value="25"></label>
+          <label>First weekday session<input id="studyWeekdayStart" type="time" value="17:00"></label>
+          <label>First weekend session<input id="studyWeekendStart" type="time" value="10:00"></label>
+        </div>
+        <h3>How busy should each day be?</h3>
+        <div id="studyAvailabilityDays" class="availability-days"></div>
+        <p class="muted small-help">Normal days use your normal limit; light days use the lighter limit; “Keep free” means the scheduler will not put new plan sessions on that day. Existing sessions are preserved and counted against capacity.</p>
+        <button id="saveStudyAvailability" class="primary-button full-button" type="button">Save availability</button>
+        <p id="studyAvailabilityStatus" class="feedback" aria-live="polite"></p>
+      </section>
+
+      <section class="card section-card">
+        <div class="section-heading"><div><h2 id="studyPlanFormTitle">Create a study goal</h2><p class="muted">Tell the planner what you want to achieve and when.</p></div></div>
+        <form id="studyPlanForm" class="form-grid">
+          <label>Plan name<input id="planTitle" maxlength="80" placeholder="e.g. Chemistry mock preparation" required></label>
+          <label>Subject<select id="planSubject" required></select></label>
+          <label>Current position (optional)<input id="planCurrentLevel" maxlength="100" placeholder="e.g. Grade 5 / not sure yet"></label>
+          <label>Target outcome (optional)<input id="planTargetLevel" maxlength="100" placeholder="e.g. Grade 7 / confident with bonding"></label>
+          <label>Deadline<input id="planDeadline" type="date" required></label>
+          <label>Priority<select id="planPriority"><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option></select></label>
+          <label>Estimated study effort per week (minutes)<input id="planWeeklyMinutes" type="number" min="15" max="900" step="5" value="90" required></label>
+          <label class="span-two">What do you need to improve?<textarea id="planGoal" rows="3" maxlength="1000" placeholder="e.g. Improve exam answers on chemical bonding and quantitative chemistry before my mock." required></textarea></label>
+          <label class="span-two">Topics or milestones, one per line<textarea id="planTopics" rows="4" maxlength="2400" placeholder="Chemical bonding\nQuantitative chemistry\nExam-question technique"></textarea></label>
+          <div class="span-two">
+            <p class="muted small-help">For now, you set the rough weekly effort and topics. The scheduler balances this against your other plans; a later AI integration will help identify syllabus topics and estimate the workload.</p>
+            <button id="generateStudyPlanProposal" class="primary-button full-button" type="submit">Generate schedule proposal</button>
+            <button id="cancelStudyPlanEdit" class="secondary-button full-button hidden" type="button">Cancel editing</button>
+            <p id="studyPlanFormStatus" class="feedback" aria-live="polite"></p>
+          </div>
+        </form>
+      </section>
+
+      <section id="studyPlanProposalCard" class="card section-card hidden">
+        <div class="section-heading"><div><h2>Review proposed schedule</h2><p class="muted">Nothing changes until you approve this proposal.</p></div></div>
+        <div id="studyPlanFeasibility" class="study-feasibility"></div>
+        <p id="studyPlanProposalSummary" class="muted small-help"></p>
+        <div id="studyPlanProposalBreakdown" class="study-plan-breakdown"></div>
+        <h3>Proposed sessions</h3>
+        <div id="studyPlanProposalSessions" class="study-proposal-list"></div>
+        <p id="studyPlanProposalStatus" class="feedback" aria-live="polite"></p>
+        <div class="button-row"><button id="approveStudyPlanProposal" class="primary-button" type="button">Approve and save schedule</button><button id="discardStudyPlanProposal" class="secondary-button" type="button">Discard proposal</button></div>
+      </section>
+
+      <section class="card section-card">
+        <div class="section-heading"><div><h2>My study plans</h2><p class="muted">Edit, pause, resume, complete, archive or delete a goal.</p></div><span id="studyPlanCount" class="pill">0 plans</span></div>
+        <button id="rebalanceStudyPlans" class="secondary-button full-button" type="button">Rebalance all active plans</button>
+        <p class="muted small-help">Rebalancing generates a preview. Future incomplete sessions created by plans are replaced only after you approve it; manually added sessions and completed history are preserved.</p>
+        <div id="studyPlanList" class="study-plan-list"></div>
       </section>
     </section>
 
@@ -222,6 +287,7 @@
   <div id="toast" role="status" aria-live="polite" class="toast hidden"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
   <script src="supabase-config.js" defer></script>
+  <script src="study-planner-engine.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>
